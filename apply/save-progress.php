@@ -176,9 +176,9 @@ function buildDraftPayload(string $token, array $data): array {
         'languages' => nullIfBlank($data['f-lang'] ?? null),
         'highest_education' => nullIfBlank($data['f-edu-level'] ?? null),
         'current_notice_period' => nullIfBlank($data['f-avail'] ?? null),
-        'is_education_healthcare_relevant' => normalizeYesNo($data['radio_r-edu-hc'] ?? null),
-        'prev_worked_healthcare' => normalizeYesNo($data['radio_r-work-hc'] ?? null),
-        'prev_worked_va' => normalizeYesNo($data['radio_r-va'] ?? null),
+        'is_education_healthcare_relevant' => normalizeYesNo($data['radio_r-edu-hc'] ?? $data['f-edu-hc'] ?? null),
+        'prev_worked_healthcare' => normalizeYesNo($data['radio_r-work-hc'] ?? $data['f-worked-hc'] ?? null),
+        'prev_worked_va' => normalizeYesNo($data['radio_r-va'] ?? $data['f-worked-va'] ?? null),
         'skills_json' => json_encode(array_values(array_filter(array_map('trim', explode(',', (string) ($data['f-skills'] ?? ''))))), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         'education_json' => json_encode(array_filter([
             'education_level' => nullIfBlank($data['f-edu-level'] ?? null),
@@ -234,13 +234,60 @@ function upsertDraftCandidate(PDO $db, string $token, array $payload): void {
         ->execute($values);
 }
 
+function decodeJsonColumn(?string $value): array {
+    if (! is_string($value) || trim($value) === '') {
+        return [];
+    }
+
+    $decoded = json_decode($value, true);
+
+    return is_array($decoded) ? $decoded : [];
+}
+
+function splitStoredPhone(?string $value): array {
+    $value = trim((string) $value);
+
+    if ($value === '') {
+        return ['', ''];
+    }
+
+    if (preg_match('/^(\+\d+)\s*(.*)$/', $value, $matches)) {
+        return [trim($matches[1]), trim($matches[2])];
+    }
+
+    return ['', $value];
+}
+
 function candidateToDraftResponse(array $row): array {
-    return [
+    $answersAll = decodeJsonColumn($row['answers_all'] ?? null);
+    $raw = is_array($answersAll['_form'] ?? null) ? $answersAll['_form'] : [];
+    $education = decodeJsonColumn($row['education_json'] ?? null);
+    $experience = decodeJsonColumn($row['experience_json'] ?? null);
+    $skills = decodeJsonColumn($row['skills_json'] ?? null);
+    [$phoneCode, $phoneNumber] = splitStoredPhone($row['phone'] ?? '');
+    [$whatsCode, $whatsNumber] = splitStoredPhone($row['whatsapp'] ?? '');
+
+    $response = [];
+    foreach ($raw as $key => $value) {
+        if (! is_string($key)) {
+            continue;
+        }
+
+        if (str_starts_with($key, 'f-') || str_starts_with($key, 'radio_')) {
+            $response[$key] = $value;
+        }
+    }
+
+    $fallbacks = [
         'f-name' => $row['name'] ?? '',
         'f-email' => $row['email'] ?? '',
         'f-linkedin' => $row['linked_in_url'] ?? '',
+        'f-phone-code' => $phoneCode,
+        'f-phone' => $phoneNumber,
+        'f-whatsapp-code' => $whatsCode,
+        'f-whatsapp' => $whatsNumber,
         'f-avail' => $row['current_notice_period'] ?? '',
-        'f-salary' => $row['salary_expectation'] ?? '',
+        'f-salary' => isset($row['salary_expectation']) ? (string) $row['salary_expectation'] : '',
         'f-sum' => $row['cv_text_preview'] ?? '',
         'f-position' => $row['position_interest'] ?? '',
         'f-referral' => $row['referrer'] ?? '',
@@ -248,12 +295,40 @@ function candidateToDraftResponse(array $row): array {
         'f-country' => $row['country'] ?? '',
         'f-postal' => $row['postal_code'] ?? '',
         'f-address' => $row['home_address'] ?? '',
-        'f-edu-level' => $row['highest_education'] ?? '',
-        'f-exp-yrs' => $row['years_total_experience'] ?? '',
+        'f-edu-level' => $education['education_level'] ?? ($row['highest_education'] ?? ''),
+        'f-deg1' => $education['main_degree'] ?? '',
+        'f-ins1' => $education['main_institution'] ?? '',
+        'f-yr1' => $education['main_years'] ?? '',
+        'f-deg2' => $education['other_degree'] ?? '',
+        'f-ins2' => $education['other_institution'] ?? '',
+        'f-certs' => $education['certifications'] ?? '',
         'f-lang' => $row['languages'] ?? '',
+        'f-exp-yrs' => $experience['exp_years'] ?? ($row['years_total_experience'] ?? ''),
+        'f-co1' => $experience['main_company'] ?? '',
+        'f-jt1' => $experience['main_title'] ?? ($row['professional_title'] ?? ''),
+        'f-resp1' => $experience['main_responsibilities'] ?? '',
+        'f-co2' => $experience['other_company'] ?? '',
+        'f-jt2' => $experience['other_title'] ?? '',
+        'f-resp2' => $experience['other_responsibilities'] ?? '',
+        'f-skills' => is_array($skills) ? implode(', ', array_filter($skills, 'is_string')) : '',
+        'f-role' => $raw['f-role'] ?? '',
+        'f-edu-hc' => !empty($row['is_education_healthcare_relevant']) ? 'Yes' : 'No',
+        'f-worked-hc' => !empty($row['prev_worked_healthcare']) ? 'Yes' : 'No',
+        'f-worked-va' => !empty($row['prev_worked_va']) ? 'Yes' : 'No',
+        'radio_r-edu-hc' => !empty($row['is_education_healthcare_relevant']) ? 'Yes' : 'No',
+        'radio_r-work-hc' => !empty($row['prev_worked_healthcare']) ? 'Yes' : 'No',
+        'radio_r-va' => !empty($row['prev_worked_va']) ? 'Yes' : 'No',
         'radio_eng-reading' => $row['english_reading'] ?? '',
         'radio_eng-listening' => $row['english_listening'] ?? '',
     ];
+
+    foreach ($fallbacks as $key => $value) {
+        if (($response[$key] ?? '') === '' && $value !== null) {
+            $response[$key] = $value;
+        }
+    }
+
+    return $response;
 }
 
 try {

@@ -1873,7 +1873,7 @@ async function submitApplication() {
     const resp = await fetch('save-progress.php', { 
       method:'POST', 
       headers:{'Content-Type':'application/json'}, 
-      body: JSON.stringify({action:'submit', data:formData}) 
+      body: JSON.stringify({action:'submit', token: SESSION_TOKEN, data:formData}) 
     });
     
     const j = await resp.json();

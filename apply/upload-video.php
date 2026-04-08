@@ -406,13 +406,13 @@ function saveToDatabase(string $token, array $post, array $files, array $analysi
         $languages = trim($post['f-lang']     ?? '');
         
         // English scores
-        $engRead   = trim($post['radio_eng-reading']   ?? '');
-        $engListen = trim($post['radio_eng-listening']  ?? '');
+        $engRead   = trim($post['radio_eng-reading']   ?? $post['eng-reading'] ?? '');
+        $engListen = trim($post['radio_eng-listening']  ?? $post['eng-listening'] ?? '');
         
         // Healthcare background
-        $eduHc    = trim($post['r-edu-hc']    ?? $post['f-edu-hc']   ?? '');
-        $workHc   = trim($post['r-work-hc']    ?? $post['f-worked-hc']  ?? '');
-        $workVa   = trim($post['r-va']         ?? $post['f-worked-va']  ?? '');
+        $eduHc    = trim($post['radio_r-edu-hc'] ?? $post['r-edu-hc'] ?? $post['f-edu-hc'] ?? '');
+        $workHc   = trim($post['radio_r-work-hc'] ?? $post['r-work-hc'] ?? $post['f-worked-hc'] ?? '');
+        $workVa   = trim($post['radio_r-va'] ?? $post['r-va'] ?? $post['f-worked-va'] ?? '');
 
         // Certifications - note: table doesn't have this column, but we collect it
         // $certifications = trim($post['f-certs'] ?? ''); // Uncomment when column is added
@@ -437,11 +437,13 @@ function saveToDatabase(string $token, array $post, array $files, array $analysi
         $photoPath  = $files['photo_file_path']      ?? null;
         $analysisPath = $files['analysis_json_path'] ?? null;
 
-        $sentimentScore = $analysis['combined_score']          ?? null;
-        $transcript     = $analysis['transcript']              ?? null;
+        $sentimentScore = isset($analysis['combined_score'])
+            ? (float) $analysis['combined_score']
+            : (isset($analysis['sentiment']['score']) ? (float) $analysis['sentiment']['score'] : 0.0);
+        $transcript     = $analysis['transcript'] ?? nullIfBlank($post['transcript'] ?? null);
         $aiAnalysisJson = !empty($analysis) ? json_encode($analysis, JSON_UNESCAPED_UNICODE) : null;
         $dominantEmo    = $analysis['facial_analysis']['dominant'] ?? null;
-        $videoLang      = $analysis['language']                ?? null;
+        $videoLang      = $analysis['language'] ?? nullIfBlank($post['language'] ?? $post['spoken_language'] ?? null);
 
         [$firstName, $lastName] = splitCandidateName($name);
         $cvTextRaw = trim((string) ($post['cv_text_raw'] ?? ''));

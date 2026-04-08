@@ -484,6 +484,8 @@ const GSDVideo = (function () {
     document.querySelectorAll('input[type=radio]:checked').forEach(r => {
       const name = r.name;
       const value = r.value;
+
+      fd.append('radio_' + name, value);
       
       if (name.startsWith('sk-vpa-')) allAnswers.skills['vpa_' + name.replace('sk-vpa-', 'q')] = value;
       else if (name.startsWith('sk-hva-')) allAnswers.skills['hva_' + name.replace('sk-hva-', 'q')] = value;
