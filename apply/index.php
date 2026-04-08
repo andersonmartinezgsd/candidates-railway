@@ -638,6 +638,9 @@ $_aiStatus = json_encode([
             🔐 API keys stored server-side in <code class="bg-gray-100 px-1 rounded">.env</code>.
             Calls route through <code class="bg-gray-100 px-1 rounded">api-proxy4.php</code>.
           </p>
+          <p class="text-[10px] leading-relaxed text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            Important: Any AI-preloaded data highlighted in purple must be reviewed and verified for accuracy before submission.
+          </p>
           <button onclick="GSD.pingProxy()" class="mt-2 w-full text-[9px] font-bold bg-slate-800 hover:bg-slate-700 text-white py-1.5 rounded-lg transition-all">
             🔌 Test Proxy Connection
           </button>
