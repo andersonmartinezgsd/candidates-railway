@@ -1,0 +1,16 @@
+Options -Indexes
+
+php_value upload_max_filesize 300M
+php_value post_max_size 300M
+php_value max_execution_time 300
+php_value max_input_time 300
+php_value memory_limit 512M
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule ^(config|classes|logic|gsd-admin-hr|PRB_01)/ - [F,L,NC]
+</IfModule>
+
+<FilesMatch "^(\.env|composer\.(json|lock)|autoload\.php|debug_data\.php|test_gemini\.php|upload_old_errors\.php|index-original\.php|index\(1\)\.php|LEEME\.txt)$">
+    Require all denied
+</FilesMatch>
