@@ -14,10 +14,12 @@ $_aiStatus = json_encode([
     'claude' => !empty($_gsd_env['CLAUDE_API_KEY']),
     'gemini' => !empty($_gsd_env['GEMINI_API_KEY']),
     'openai' => !empty($_gsd_env['OPENAI_API_KEY']),
+    'groq' => !empty($_gsd_env['GROQ_API_KEY']),
+    'openrouter' => !empty($_gsd_env['OPENROUTER_API_KEY']),
     'order' => $_gsd_env['AI_ORDER'] ?? 'gemini,claude,openai',
     'env_loaded' => !empty($_gsd_env),
     'env_path' => $_gsd_env['__path'] ?? '',
-]) ?: '{"claude":false,"gemini":false,"openai":false,"order":"gemini,claude,openai"}';
+]) ?: '{"claude":false,"gemini":false,"openai":false,"groq":false,"openrouter":false,"order":"gemini,claude,openai"}';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -711,9 +713,9 @@ $_aiStatus = json_encode([
 let AI_STATUS = (function() {
   try {
     const el = document.getElementById('gsd-server-config');
-    return el ? JSON.parse(el.dataset.aiStatus) : {claude:false,gemini:false,openai:false,order:'gemini,claude,openai',env_loaded:false,env_path:''};
+    return el ? JSON.parse(el.dataset.aiStatus) : {claude:false,gemini:false,openai:false,groq:false,openrouter:false,order:'gemini,claude,openai',env_loaded:false,env_path:''};
   } catch(e) {
-    return {claude:false,gemini:false,openai:false,order:'gemini,claude,openai',env_loaded:false,env_path:''};
+    return {claude:false,gemini:false,openai:false,groq:false,openrouter:false,order:'gemini,claude,openai',env_loaded:false,env_path:''};
   }
 })();
 let AI_HEALTH = null;
@@ -721,6 +723,8 @@ const AI_PROVIDERS = [
   {key:'claude',label:'Claude',icon:'🟣'},
   {key:'gemini',label:'Gemini',icon:'🔵'},
   {key:'openai',label:'OpenAI',icon:'🟢'},
+  {key:'groq',label:'Groq',icon:'🟠'},
+  {key:'openrouter',label:'OpenRouter',icon:'⚪'},
 ];
 
 const STEPS = 8;
@@ -1380,7 +1384,7 @@ function regexParse(text) {
 
 /* ════ AI EXTRACTION ════ */
 async function aiExtract(text, seedData = {}) {
-  const anyActive = AI_STATUS.claude || AI_STATUS.gemini || AI_STATUS.openai;
+  const anyActive = AI_PROVIDERS.some(provider => !!AI_STATUS[provider.key]);
   const localFallback = buildLocalFallbackData(text, seedData);
   if (!anyActive) {
     extLog('No AI providers configured in .env → using local smart fallback','warn');
@@ -1742,7 +1746,7 @@ function applyProviderHealth(health) {
 
   const failingCodes = AI_PROVIDERS
     .map(meta => health.providers?.[meta.key])
-    .filter(provider => provider && !provider.healthy)
+    .filter(provider => provider && provider.configured && !provider.healthy)
     .map(provider => provider.code || 'WARN');
 
   if (failingCodes.length) {
@@ -1763,9 +1767,11 @@ async function pingProxy(silentLog = false) {
     applyProviderHealth(j);
     let out = 'STATUS: ' + j.status + '\nENV: ' + (j.env_loaded ? '✓ ' + j.env_path : '✗ NOT FOUND') + '\ncURL: ' + (j.curl || '?') + '\nPHP: ' + (j.php || '?') + '\n';
     if (j.providers) {
-      out += 'CLAUDE: ' + (j.providers.claude?.code || '?') + ' — ' + (j.providers.claude?.message || 'n/a') + '\n';
-      out += 'GEMINI: ' + (j.providers.gemini?.code || '?') + ' — ' + (j.providers.gemini?.message || 'n/a') + '\n';
-      out += 'OPENAI: ' + (j.providers.openai?.code || '?') + ' — ' + (j.providers.openai?.message || 'n/a') + '\n';
+      AI_PROVIDERS.forEach(provider => {
+        const snapshot = j.providers[provider.key];
+        if (!snapshot) return;
+        out += provider.label.toUpperCase() + ': ' + (snapshot.code || '?') + ' — ' + (snapshot.message || 'n/a') + '\n';
+      });
     }
     out += 'ORDER: ' + (j.order || '?');
     if (j.alert?.reason) out += '\nALERT: ' + j.alert.reason + (j.alert.to ? ' → ' + j.alert.to : '');

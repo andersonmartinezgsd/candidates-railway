@@ -9,6 +9,8 @@
  *   GEMINI_API_KEY=key1,key2,key3
  *   CLAUDE_API_KEY=key1,key2
  *   OPENAI_API_KEY=key1,key2
+ *   GROQ_API_KEY=key1,key2
+ *   OPENROUTER_API_KEY=key1,key2
  *   AI_ORDER=gemini,claude,openai
  *   CLAUDE_MODEL_ORDER=claude-sonnet-4-20250514,claude-3-7-sonnet-20250219
  *
@@ -50,6 +52,8 @@ function parseModelList(string $raw, array $defaults): array {
 $CLAUDE_KEYS = parseKeys($env['CLAUDE_API_KEY'] ?? '', true);
 $GEMINI_KEYS = parseKeys($env['GEMINI_API_KEY'] ?? '');
 $OPENAI_KEYS = parseKeys($env['OPENAI_API_KEY'] ?? '');
+$GROQ_KEYS = parseKeys($env['GROQ_API_KEY'] ?? '');
+$OPENROUTER_KEYS = parseKeys($env['OPENROUTER_API_KEY'] ?? '');
 $AI_ORDER    = trim($env['AI_ORDER'] ?? 'gemini,claude,openai');
 $CLAUDE_MODELS = parseModelList(
     $env['CLAUDE_MODEL_ORDER'] ?? '',
@@ -58,6 +62,22 @@ $CLAUDE_MODELS = parseModelList(
         'claude-3-7-sonnet-20250219',
         'claude-3-5-sonnet-20241022',
         'claude-3-5-haiku-20241022',
+    ]
+);
+$GROQ_MODELS = parseModelList(
+    $env['GROQ_MODEL_ORDER'] ?? '',
+    [
+        'llama-3.3-70b-versatile',
+        'openai/gpt-oss-120b',
+        'llama-3.1-8b-instant',
+    ]
+);
+$OPENROUTER_MODELS = parseModelList(
+    $env['OPENROUTER_MODEL_ORDER'] ?? '',
+    [
+        'openai/gpt-4o-mini',
+        'meta-llama/llama-3.3-70b-instruct',
+        'anthropic/claude-3.5-sonnet',
     ]
 );
 
@@ -73,8 +93,11 @@ if ($isGet || $isPing) {
         'claude' => providerHealthSnapshot('claude', $CLAUDE_KEYS, $mask),
         'gemini' => providerHealthSnapshot('gemini', $GEMINI_KEYS, $mask),
         'openai' => providerHealthSnapshot('openai', $OPENAI_KEYS, $mask),
+        'groq' => providerHealthSnapshot('groq', $GROQ_KEYS, $mask),
+        'openrouter' => providerHealthSnapshot('openrouter', $OPENROUTER_KEYS, $mask),
     ];
-    $allHealthy = count(array_filter($providerHealth, fn(array $provider): bool => $provider['healthy'])) === 3;
+    $coreProviders = ['claude', 'gemini', 'openai'];
+    $allHealthy = count(array_filter($coreProviders, fn(string $name): bool => !empty($providerHealth[$name]['healthy']))) === count($coreProviders);
     $alert = (($_GET['notify'] ?? '1') !== '0')
         ? maybeSendProviderHealthAlert($providerHealth, $envLoaded, $envFoundPath, $AI_ORDER)
         : ['sent' => false, 'reason' => 'notify_disabled'];
@@ -129,6 +152,8 @@ foreach ($order as $provider) {
         'gemini' => $GEMINI_KEYS,
         'claude' => $CLAUDE_KEYS,
         'openai' => $OPENAI_KEYS,
+        'groq' => $GROQ_KEYS,
+        'openrouter' => $OPENROUTER_KEYS,
         default  => [],
     };
 
@@ -144,6 +169,8 @@ foreach ($order as $provider) {
                 'gemini' => callGemini($key, $fullPrompt),
                 'claude' => callClaude($key, $fullPrompt),
                 'openai' => callOpenAI($key, $fullPrompt),
+                'groq' => callGroq($key, $fullPrompt),
+                'openrouter' => callOpenRouter($key, $fullPrompt),
                 default  => null,
             };
 
@@ -183,6 +210,8 @@ echo json_encode([
         'gemini' => count($GEMINI_KEYS),
         'claude' => count($CLAUDE_KEYS),
         'openai' => count($OPENAI_KEYS),
+        'groq' => count($GROQ_KEYS),
+        'openrouter' => count($OPENROUTER_KEYS),
     ],
     'env_loaded' => $envLoaded,
 ]);
@@ -286,37 +315,117 @@ function shouldTryNextClaudeModel(Throwable $exception): bool {
 }
 
 function callOpenAI(string $key, string $prompt): ?array {
-    $payload = json_encode([
-        'model'           => 'gpt-4o-mini',
-        'max_tokens'      => 2500,
-        'temperature'     => 0.1,
-        'response_format' => ['type' => 'json_object'],
-        'messages'        => [
-            ['role' => 'system', 'content' => 'CV data extractor. Respond with valid JSON only.'],
-            ['role' => 'user',   'content' => $prompt],
-        ],
-    ]);
-
-    [$body, $code] = curlPost(
-        'https://api.openai.com/v1/chat/completions',
-        $payload,
+    return callOpenAICompatible(
+        $key,
+        $prompt,
         [
-            'Content-Type: application/json',
-            'Authorization: Bearer ' . $key,
+            'base_url' => 'https://api.openai.com/v1/chat/completions',
+            'models' => ['gpt-4o-mini', 'gpt-4.1-mini'],
+            'headers' => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $key,
+            ],
         ]
     );
+}
 
-    if ($code === 429) {
-        $e = json_decode($body, true);
-        throw new QuotaException("HTTP $code: " . ($e['error']['message'] ?? substr($body, 0, 150)));
-    }
-    if ($code !== 200) {
-        $e = json_decode($body, true);
-        throw new RuntimeException("HTTP $code: " . ($e['error']['message'] ?? substr($body, 0, 150)));
+function callGroq(string $key, string $prompt): ?array {
+    global $GROQ_MODELS;
+
+    return callOpenAICompatible(
+        $key,
+        $prompt,
+        [
+            'base_url' => 'https://api.groq.com/openai/v1/chat/completions',
+            'models' => $GROQ_MODELS,
+            'headers' => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $key,
+            ],
+        ]
+    );
+}
+
+function callOpenRouter(string $key, string $prompt): ?array {
+    global $OPENROUTER_MODELS;
+
+    return callOpenAICompatible(
+        $key,
+        $prompt,
+        [
+            'base_url' => 'https://openrouter.ai/api/v1/chat/completions',
+            'models' => $OPENROUTER_MODELS,
+            'headers' => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $key,
+                'HTTP-Referer: https://candidates.gsdoutsource.com',
+                'X-Title: GSD Candidates Intake',
+            ],
+        ]
+    );
+}
+
+function callOpenAICompatible(string $key, string $prompt, array $config): ?array {
+    $lastException = null;
+    foreach ($config['models'] as $model) {
+        try {
+            [$body, $code] = curlPost(
+                $config['base_url'],
+                json_encode([
+                    'model'           => $model,
+                    'max_tokens'      => 2500,
+                    'temperature'     => 0.1,
+                    'response_format' => ['type' => 'json_object'],
+                    'messages'        => [
+                        ['role' => 'system', 'content' => 'CV data extractor. Respond with valid JSON only.'],
+                        ['role' => 'user',   'content' => $prompt],
+                    ],
+                ]),
+                $config['headers']
+            );
+
+            if ($code === 429 || $code === 402) {
+                $e = json_decode($body, true);
+                throw new QuotaException("HTTP $code: " . ($e['error']['message'] ?? substr($body, 0, 150)));
+            }
+            if ($code !== 200) {
+                $e = json_decode($body, true);
+                $message = $e['error']['message'] ?? substr($body, 0, 150);
+                $exception = new RuntimeException("HTTP $code: $message");
+                if (shouldTryNextModel($exception)) {
+                    $lastException = $exception;
+                    continue;
+                }
+                throw $exception;
+            }
+
+            $d = json_decode($body, true);
+            return parseJSON($d['choices'][0]['message']['content'] ?? '');
+        } catch (QuotaException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            if (shouldTryNextModel($exception)) {
+                $lastException = $exception;
+                continue;
+            }
+            throw $exception;
+        }
     }
 
-    $d = json_decode($body, true);
-    return parseJSON($d['choices'][0]['message']['content'] ?? '');
+    if ($lastException) {
+        throw $lastException;
+    }
+
+    throw new RuntimeException('Provider model list is empty');
+}
+
+function shouldTryNextModel(Throwable $exception): bool {
+    $message = strtolower($exception->getMessage());
+    return str_contains($message, '404')
+        || str_contains($message, '422')
+        || str_contains($message, 'model')
+        || str_contains($message, 'not found')
+        || str_contains($message, 'unsupported');
 }
 
 function providerHealthSnapshot(string $provider, array $keys, callable $masker): array {
@@ -361,7 +470,7 @@ function providerHealthSnapshot(string $provider, array $keys, callable $masker)
 }
 
 function probeProvider(string $provider, string $key): void {
-    global $CLAUDE_MODELS;
+    global $CLAUDE_MODELS, $GROQ_MODELS, $OPENROUTER_MODELS;
 
     switch ($provider) {
         case 'gemini':
@@ -415,6 +524,28 @@ function probeProvider(string $provider, string $key): void {
             );
             break;
 
+        case 'groq':
+            probeOpenAICompatibleProvider(
+                'https://api.groq.com/openai/v1/models',
+                [
+                    'Authorization: Bearer ' . $key,
+                    'Content-Type: application/json',
+                ]
+            );
+            return;
+
+        case 'openrouter':
+            probeOpenAICompatibleProvider(
+                'https://openrouter.ai/api/v1/models',
+                [
+                    'Authorization: Bearer ' . $key,
+                    'HTTP-Referer: https://candidates.gsdoutsource.com',
+                    'X-Title: GSD Candidates Intake',
+                    'Content-Type: application/json',
+                ]
+            );
+            return;
+
         default:
             throw new RuntimeException('Unsupported provider');
     }
@@ -450,13 +581,32 @@ function probeClaudeModel(string $key, string $model): array {
     );
 }
 
+function probeOpenAICompatibleProvider(string $url, array $headers): void {
+    [, $code] = curlRequest('GET', $url, null, $headers);
+
+    if ($code === 200) {
+        return;
+    }
+
+    if ($code === 429 || $code === 402) {
+        throw new QuotaException("HTTP {$code}: quota or rate limit");
+    }
+
+    if (in_array($code, [400, 401, 403], true)) {
+        throw new RuntimeException("HTTP {$code}: auth or permissions");
+    }
+
+    throw new RuntimeException("HTTP {$code}: provider unavailable");
+}
+
 function classifyProviderFailure(Throwable $exception, array $masked, int $keyIndex): array {
     $message = $exception->getMessage();
     $upper = strtoupper($message);
 
     $code = match (true) {
         $exception instanceof QuotaException,
-        str_contains($upper, '429') => 'QUOTA',
+        str_contains($upper, '429'),
+        str_contains($upper, '402') => 'QUOTA',
         str_contains($upper, '401'),
         str_contains($upper, '403'),
         str_contains($upper, 'AUTH') => 'AUTH',
