@@ -269,15 +269,15 @@ $_aiStatus = json_encode([
               <div><label class="lbl req">Email Address</label><input type="email" id="f-email" class="inp" placeholder="john@email.com"></div>
               <div><label class="lbl req">LinkedIn Profile</label><input type="url" id="f-linkedin" class="inp" placeholder="linkedin.com/in/username"></div>
               <div><label class="lbl req">Phone Number</label>
-                <div class="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-                  <select id="f-phone-code" class="inp text-[11px] font-mono sm:w-44 sm:flex-none"></select>
-                  <input type="tel" id="f-phone" class="inp w-full min-w-0 sm:flex-[1_1_12rem]" placeholder="300 123 4567">
+                <div class="grid grid-cols-[120px_1fr] gap-2">
+                  <select id="f-phone-code" class="inp text-[11px] font-mono w-full"></select>
+                  <input type="tel" id="f-phone" class="inp w-full" placeholder="300 123 4567">
                 </div>
               </div>
               <div><label class="lbl req">WhatsApp Number</label>
-                <div class="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-                  <select id="f-whatsapp-code" class="inp text-[11px] font-mono sm:w-44 sm:flex-none"></select>
-                  <input type="tel" id="f-whatsapp" class="inp w-full min-w-0 sm:flex-[1_1_12rem]" placeholder="300 123 4567">
+                <div class="grid grid-cols-[120px_1fr] gap-2">
+                  <select id="f-whatsapp-code" class="inp text-[11px] font-mono w-full"></select>
+                  <input type="tel" id="f-whatsapp" class="inp w-full" placeholder="300 123 4567">
                 </div>
               </div>
               <div><label class="lbl req">Country</label><select id="f-country" class="inp" onchange="GSD.loadCities(this.value)"></select></div>
