@@ -919,6 +919,15 @@ function normalizeExtractedData(data, originalText = '') {
   out.address ||= location.address;
   out.availability ||= inferAvailability(originalText);
   out.suggested_role = extractRoleCode(out.suggested_role) || out.suggested_role || '';
+  out.languages ||= inferLanguagesFromText(originalText);
+  out.certifications ||= inferCertificationsFromText(originalText);
+  out.website ||= inferWebsiteFromText(originalText);
+
+  const healthcareSignals = /\b(EMR|EHR|HIPAA|medical\s+billing|ICD-?10|CPT\s+code|prior\s+authorization|patient\s+scheduling|clinical|healthcare|health\s+care|physician|hospital|clinic|nursing|dental|pharmacy|insurance\s+claim|RCM|athena|epic|cerner|modmed)\b/i.test(originalText);
+  const vaSignals = /\b(virtual\s+assistant|executive\s+assistant|administrative\s+assistant|remote\s+support|calendar\s+management|personal\s+assistant|inbox\s+management|travel\s+coordination)\b/i.test(originalText);
+  if (!out.edu_healthcare && out.education_level) out.edu_healthcare = healthcareSignals ? 'Yes' : 'No';
+  if (!out.worked_healthcare && (out.main_title || out.main_company || out.skills)) out.worked_healthcare = healthcareSignals ? 'Yes' : 'No';
+  if (!out.worked_va && (out.main_title || out.suggested_role)) out.worked_va = vaSignals || out.suggested_role === 'VPA' ? 'Yes' : 'No';
 
   return out;
 }
@@ -938,7 +947,7 @@ function extractSection(text, headings) {
 
   for (let index = 0; index < lines.length; index++) {
     const normalized = lines[index].toLowerCase().replace(/[:\-]+$/,'');
-    if (wanted.includes(normalized)) {
+    if (wanted.includes(normalized) || wanted.some(entry => normalized.includes(entry))) {
       start = index + 1;
       break;
     }
@@ -953,6 +962,70 @@ function extractSection(text, headings) {
   }
 
   return section.join('\n').trim();
+}
+
+function looksLikeDateLine(line) {
+  return /\b(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:(?:present|current|now)|(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?(?:19|20)\d{2})\b/i.test(line);
+}
+
+function looksLikeRoleLine(line) {
+  return /\b(manager|assistant|specialist|coordinator|representative|recruiter|developer|analyst|executive|sales|marketing|virtual assistant|account manager|hr|operations|technician|engineer|consultant|advisor|agent|support|administrator)\b/i.test(line);
+}
+
+function looksLikeCompanyLine(line) {
+  return /\b(llc|inc|corp|company|clinic|hospital|agency|solutions|services|ltda|sas|s\.a\.s|universidad|university|college|school|bank|group)\b/i.test(line)
+    || /^[A-ZÀ-Ý][\wÀ-ÿ&.,' -]{3,}$/.test(line);
+}
+
+function getNearbyLines(lines, index, radius = 2) {
+  return lines.slice(Math.max(0, index - radius), Math.min(lines.length, index + radius + 1));
+}
+
+function inferLanguagesFromText(text) {
+  const section = extractSection(text, ['languages', 'language', 'idiomas']);
+  const source = section || text;
+  const catalog = ['English', 'Spanish', 'French', 'German', 'Portuguese', 'Italian', 'Mandarin', 'Chinese', 'Arabic', 'Japanese', 'Korean', 'Dutch', 'Russian', 'Hindi'];
+  const levels = [
+    { rx: /\b(native|bilingual)\b/i, value: 'Native' },
+    { rx: /\b(c2|c1|b2|b1|a2|a1)\b/i, value: match => match[1].toUpperCase() },
+    { rx: /\b(fluent)\b/i, value: 'C1' },
+    { rx: /\b(advanced)\b/i, value: 'B2' },
+    { rx: /\b(intermediate)\b/i, value: 'B1' },
+    { rx: /\b(basic)\b/i, value: 'A2' },
+  ];
+
+  const found = [];
+  for (const language of catalog) {
+    const match = source.match(new RegExp(`\\b${language}\\b([^\\n]{0,30})`, 'i'));
+    if (!match) continue;
+    let label = language;
+    const tail = match[1] || '';
+    for (const level of levels) {
+      const levelMatch = tail.match(level.rx);
+      if (levelMatch) {
+        label += ' ' + (typeof level.value === 'function' ? level.value(levelMatch) : level.value);
+        break;
+      }
+    }
+    found.push(label);
+  }
+
+  return [...new Set(found)].join(', ');
+}
+
+function inferCertificationsFromText(text) {
+  const section = extractSection(text, ['certifications', 'certification', 'licenses', 'licenses & certifications']);
+  const source = section || text;
+  const certRx = /\b(AWS\s+(?:Certified\s+)?[\w\s]+|Google\s+(?:Certified|Analytics|Ads|Cloud)[\w\s]*|PMP|PMI[\-\s]ACP|Scrum\s+Master|CSM|CSPO|HubSpot[\w\s]*(?:Certified)?|Salesforce\s+\w+|HIPAA\s+(?:Compliant|Certified)?|CompTIA\s+\w+|Cisco\s+\w+|Microsoft\s+(?:Certified|Azure|Office)\s+[\w\s]*|Six\s+Sigma|ITIL|ISO\s+\d+|CPA|CMA|SHRM[-\s]?\w*)\b/gi;
+  return [...new Set([...source.matchAll(certRx)].map(match => normalizedText(match[0])))]
+    .slice(0, 8)
+    .join(', ');
+}
+
+function inferWebsiteFromText(text) {
+  const domainRx = /\b(?:https?:\/\/)?(?:www\.)?(?!linkedin\.com|github\.com|x\.com|twitter\.com)([a-z0-9][a-z0-9.-]+\.[a-z]{2,})(?:\/[^\s]*)?\b/gi;
+  const matches = [...text.matchAll(domainRx)].map(match => normalizedText(match[0]).replace(/[,.)]+$/,''));
+  return matches.find(entry => !entry.includes('@')) || '';
 }
 
 function inferSkillsFromText(text) {
@@ -1001,33 +1074,81 @@ function inferSummaryFromText(text, data = {}) {
 function inferEducationData(text) {
   const section = extractSection(text, ['education', 'academic background', 'academic history', 'studies']);
   const lines = cleanLines(section || text);
-  const degreeLine = lines.find(line => /\b(ph\.?d|doctorate|master'?s?|mba|msc|bachelor'?s?|b\.s\.|b\.a\.|engineer|licenci|associate|technician|t[eé]cnico|diploma)\b/i.test(line)) || '';
-  const institutionLine = lines.find(line => /\b(university|college|institute|school|academy|instituci[oó]n|universidad)\b/i.test(line)) || '';
-  const yearsLine = lines.find(line => /\b(19|20)\d{2}\b/.test(line)) || '';
+  const degreeIndexes = lines
+    .map((line, index) => ({ line, index }))
+    .filter(entry => /\b(ph\.?d|doctorate|master'?s?|mba|msc|bachelor'?s?|b\.s\.|b\.a\.|engineer|licenci|associate|technician|t[eé]cnico|diploma|certificate)\b/i.test(entry.line));
+  const [main, secondary] = degreeIndexes;
+  const pickInstitution = (entry) => {
+    if (!entry) return '';
+    return getNearbyLines(lines, entry.index, 2).find(line => /\b(university|college|institute|school|academy|instituci[oó]n|universidad)\b/i.test(line)) || '';
+  };
+  const pickYears = (entry) => {
+    if (!entry) return '';
+    return getNearbyLines(lines, entry.index, 2).find(line => /\b(19|20)\d{2}\b/.test(line)) || '';
+  };
 
   return {
-    main_degree: degreeLine,
-    main_institution: institutionLine,
-    main_years: yearsLine,
+    main_degree: main?.line || '',
+    main_institution: pickInstitution(main),
+    main_years: pickYears(main),
+    other_degree: secondary?.line || '',
+    other_institution: pickInstitution(secondary),
+    other_years: pickYears(secondary),
   };
 }
 
 function inferExperienceData(text) {
   const section = extractSection(text, ['experience', 'professional experience', 'work experience', 'employment history']);
   const lines = cleanLines(section || text);
-  const roleLine = lines.find(line => /\b(manager|assistant|specialist|coordinator|representative|recruiter|developer|analyst|executive|sales|marketing|virtual assistant|account manager|hr|operations)\b/i.test(line)) || '';
-  const companyLine = lines.find(line => /\b(at|for)\s+[A-Z]/.test(line) || /\b(llc|inc|corp|company|clinic|hospital|agency|solutions|services)\b/i.test(line)) || '';
-  const responsibilityLines = lines.filter(line => /^[-•]/.test(line) || /\b(responsible|managed|supported|coordinated|handled|developed|executed|assisted)\b/i.test(line)).slice(0, 4);
+  const entries = [];
+  lines.forEach((line, index) => {
+    if (!looksLikeDateLine(line)) return;
+    const nearby = getNearbyLines(lines, index, 2).filter(candidate => candidate !== line);
+    const title = nearby.find(looksLikeRoleLine) || '';
+    const company = nearby.find(candidate => candidate !== title && looksLikeCompanyLine(candidate)) || '';
+    const responsibilities = lines
+      .slice(index + 1, index + 6)
+      .filter(candidate => /^[-•]/.test(candidate) || /\b(responsible|managed|supported|coordinated|handled|developed|executed|assisted|oversaw|led|maintained|organized)\b/i.test(candidate))
+      .slice(0, 4)
+      .map(candidate => candidate.replace(/^[•-]\s*/, '- '));
 
-  const otherRoleLine = lines.find(line => line !== roleLine && /\b(manager|assistant|specialist|coordinator|representative|recruiter|developer|analyst|executive|sales|marketing|virtual assistant|account manager|hr|operations)\b/i.test(line)) || '';
-  const otherCompanyLine = lines.find(line => line !== companyLine && /\b(llc|inc|corp|company|clinic|hospital|agency|solutions|services)\b/i.test(line)) || '';
+    entries.push({
+      years: line,
+      title,
+      company,
+      responsibilities: responsibilities.join('\n'),
+    });
+  });
+
+  if (entries.length === 0) {
+    const roleLines = lines.filter(looksLikeRoleLine);
+    const companyLines = lines.filter(looksLikeCompanyLine);
+    entries.push({
+      title: roleLines[0] || '',
+      company: companyLines[0] || '',
+      responsibilities: lines
+        .filter(line => /^[-•]/.test(line) || /\b(responsible|managed|supported|coordinated|handled|developed|executed|assisted|oversaw|led|maintained|organized)\b/i.test(line))
+        .slice(0, 4)
+        .map(line => line.replace(/^[•-]\s*/, '- '))
+        .join('\n'),
+    });
+    if (roleLines[1] || companyLines[1]) {
+      entries.push({
+        title: roleLines[1] || '',
+        company: companyLines[1] || '',
+      });
+    }
+  }
+
+  const [main, secondary] = entries;
 
   return {
-    main_title: roleLine,
-    main_company: companyLine.replace(/\b(?:at|for)\s+/i, ''),
-    main_responsibilities: responsibilityLines.map(line => line.replace(/^[•-]\s*/, '- ')).join('\n'),
-    other_title: otherRoleLine,
-    other_company: otherCompanyLine.replace(/\b(?:at|for)\s+/i, ''),
+    main_title: normalizedText(main?.title || ''),
+    main_company: normalizedText((main?.company || '').replace(/\b(?:at|for)\s+/i, '')),
+    main_responsibilities: normalizedText(main?.responsibilities || ''),
+    other_title: normalizedText(secondary?.title || ''),
+    other_company: normalizedText((secondary?.company || '').replace(/\b(?:at|for)\s+/i, '')),
+    other_years_exp: normalizedText(secondary?.years || ''),
   };
 }
 
@@ -1054,6 +1175,35 @@ function inferSuggestedRole(text, data = {}) {
   if (/\b(recruiting|talent acquisition|hr|human resources|payroll|onboarding)\b/.test(source)) return 'HRO';
   if (/\b(executive assistant|virtual assistant|administrative assistant|calendar management|travel coordination|inbox management)\b/.test(source)) return 'VPA';
   return '';
+}
+
+function buildLocalFallbackData(text, seed = {}) {
+  const out = normalizeExtractedData({...seed}, text);
+  const education = inferEducationData(text);
+  const experience = inferExperienceData(text);
+  const location = inferLocationFromText(text, out.address || out.address_hint || '');
+
+  out.name ||= pickCandidateName(text);
+  out.address ||= location.address;
+  out.country ||= location.country || inferCountryFromPhone(out.phone || '');
+  out.city ||= location.city;
+  out.skills ||= inferSkillsFromText(text);
+  out.summary ||= inferSummaryFromText(text, {...out, ...experience});
+  out.languages ||= inferLanguagesFromText(text);
+  out.certifications ||= inferCertificationsFromText(text);
+  out.website ||= inferWebsiteFromText(text);
+  out.availability ||= inferAvailability(text);
+  out.exp_years ||= out.exp_years_text || inferExperienceRangeFromDates(out.dateRanges || '');
+  out.suggested_role ||= inferSuggestedRole(text, {...out, ...experience});
+
+  for (const [key, value] of Object.entries(education)) {
+    if (!out[key] && normalizedText(value)) out[key] = value;
+  }
+  for (const [key, value] of Object.entries(experience)) {
+    if (!out[key] && normalizedText(value)) out[key] = value;
+  }
+
+  return normalizeExtractedData(out, text);
 }
 
 /* ════ LANDING SCREEN HANDLERS ════ */
@@ -1103,7 +1253,7 @@ async function runExtraction() {
     xStep(2,'done');
 
     xStep(3,'run');
-    const aiData = await aiExtract(cvText);
+    const aiData = await aiExtract(cvText, rxData);
     renderExtFields('ai-out', aiData, 'ai');
     document.getElementById('ai-count').textContent = countFilled(aiData) + ' fields';
     xStep(3,'done');
@@ -1157,7 +1307,7 @@ function regexParse(text) {
   r.github = gh ? 'github.com/' + gh[1] : '';
   const webRx = /https?:\/\/(?!(?:www\.)?(?:linkedin|github|twitter|x\.com))[^\s,)>"'<]+/gi;
   const webs = [...text.matchAll(webRx)].map(m => m[0].replace(/[,.)]+$/,''));
-  r.website = webs[0] || '';
+  r.website = webs[0] || inferWebsiteFromText(text);
   const cityRx = text.match(/\b(?:Based (?:in|at)|Location[:\s]+|Address[:\s]+|City[:\s]+)([A-Z][a-zA-ZÀ-ÿ\s\-]+(?:,\s*[A-Z][a-zA-ZÀ-ÿ\s]+)?)/i);
   r.address_hint = (cityRx?.[1] || '').trim();
   if (r.address_hint) extLog('address: ' + r.address_hint,'ok');
@@ -1193,10 +1343,10 @@ function regexParse(text) {
   if (r.education_level) extLog('education: ' + r.education_level,'ok');
   const langRx = /\b(English|Spanish|French|German|Portuguese|Italian|Mandarin|Chinese|Arabic|Japanese|Korean|Dutch|Russian|Hindi)\b[^\n]{0,35}?\b([ABC][12]|[Nn]ative|[Ff]luent|[Aa]dvanced|[Uu]pper[\s\-][Ii]ntermediate|[Ii]ntermediate|[Bb]asic)\b/g;
   const langs = [...text.matchAll(langRx)].map(m => `${m[1]} (${m[2]})`);
-  if (langs.length) { r.languages = [...new Set(langs)].join(', '); extLog('languages: ' + r.languages,'ok'); }
-  const certRx = /\b(AWS\s+(?:Certified\s+)?[\w\s]+|Google\s+(?:Certified|Analytics|Ads|Cloud)[\w\s]*|PMP|PMI[\-\s]ACP|Scrum\s+Master|CSM|CSPO|HubSpot[\w\s]*(?:Certified)?|Salesforce\s+\w+|HIPAA\s+(?:Compliant|Certified)?|CompTIA\s+\w+|Cisco\s+\w+|Microsoft\s+(?:Certified|Azure|Office)\s+[\w\s]*|Six\s+Sigma|ITIL|ISO\s+\d+|CPA|CMA|SHRM[-\s]?\w*)\b/gi;
-  const certs = [...text.matchAll(certRx)].map(m => m[0].trim().replace(/\s+/g,' '));
-  if (certs.length) { r.certifications = [...new Set(certs)].join(', '); extLog('certifications: ' + r.certifications,'ok'); }
+  r.languages = [...new Set(langs)].join(', ') || inferLanguagesFromText(text);
+  if (r.languages) extLog('languages: ' + r.languages,'ok');
+  r.certifications = inferCertificationsFromText(text);
+  if (r.certifications) extLog('certifications: ' + r.certifications,'ok');
   const hcKw = /\b(EMR|EHR|HIPAA|medical\s+billing|ICD-?10|CPT\s+code|prior\s+authorization|patient\s+scheduling|clinical|healthcare|health\s+care|physician|hospital|clinic|nursing|dental|pharmacy|insurance\s+claim|RCM|athena|epic|cerner|modmed)\b/gi;
   const hcM = text.match(hcKw) || [];
   if (hcM.length >= 2) { r.edu_healthcare = 'Yes'; r.worked_healthcare = 'Yes'; extLog(`healthcare (${hcM.length} keywords)`,'ok'); }
@@ -1229,13 +1379,13 @@ function regexParse(text) {
 }
 
 /* ════ AI EXTRACTION ════ */
-async function aiExtract(text) {
+async function aiExtract(text, seedData = {}) {
   const anyActive = AI_STATUS.claude || AI_STATUS.gemini || AI_STATUS.openai;
+  const localFallback = buildLocalFallbackData(text, seedData);
   if (!anyActive) {
-    extLog('No AI providers configured in .env → skipping','warn');
-    document.getElementById('side-provider-badge').textContent = '⚠ Not configured';
-    document.getElementById('ai-out').innerHTML = '<div class="ef"><div class="ev" style="font-size:10px;color:#9ca3af">No API keys found in server .env file. Add CLAUDE_API_KEY, GEMINI_API_KEY or OPENAI_API_KEY.</div></div>';
-    return {};
+    extLog('No AI providers configured in .env → using local smart fallback','warn');
+    document.getElementById('side-provider-badge').textContent = '⚠ LOCAL';
+    return localFallback;
   }
   extLog('Calling api-proxy4.php...','info');
   try {
@@ -1257,10 +1407,14 @@ async function aiExtract(text) {
     extLog('Proxy: ' + (j.error || 'Unknown error'),'err');
     if (j.details && j.details.length) j.details.forEach(d => extLog('  ' + d,'warn'));
     if (!j.env_loaded) extLog('  .env file NOT found by server!','err');
-    return {};
+    extLog('Using local smart fallback for missing AI response','warn');
+    document.getElementById('side-provider-badge').textContent = '⚠ LOCAL';
+    return localFallback;
   } catch(err) {
     extLog('api-proxy4.php error: ' + err.message,'err');
-    return {};
+    extLog('Using local smart fallback after proxy error','warn');
+    document.getElementById('side-provider-badge').textContent = '⚠ LOCAL';
+    return localFallback;
   }
 }
 

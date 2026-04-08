@@ -10,6 +10,7 @@
  *   CLAUDE_API_KEY=key1,key2
  *   OPENAI_API_KEY=key1,key2
  *   AI_ORDER=gemini,claude,openai
+ *   CLAUDE_MODEL_ORDER=claude-sonnet-4-20250514,claude-3-7-sonnet-20250219
  *
  * GET  ?action=ping  → health check
  * POST {action:extract_cv, cv_text:...} → extracción IA
@@ -41,10 +42,24 @@ function parseKeys(string $raw, bool $isClaude = false): array {
     return array_values($keys);
 }
 
+function parseModelList(string $raw, array $defaults): array {
+    $models = array_values(array_filter(array_map('trim', explode(',', $raw))));
+    return $models !== [] ? $models : $defaults;
+}
+
 $CLAUDE_KEYS = parseKeys($env['CLAUDE_API_KEY'] ?? '', true);
 $GEMINI_KEYS = parseKeys($env['GEMINI_API_KEY'] ?? '');
 $OPENAI_KEYS = parseKeys($env['OPENAI_API_KEY'] ?? '');
 $AI_ORDER    = trim($env['AI_ORDER'] ?? 'gemini,claude,openai');
+$CLAUDE_MODELS = parseModelList(
+    $env['CLAUDE_MODEL_ORDER'] ?? '',
+    [
+        'claude-sonnet-4-20250514',
+        'claude-3-7-sonnet-20250219',
+        'claude-3-5-sonnet-20241022',
+        'claude-3-5-haiku-20241022',
+    ]
+);
 
 /* ════════════════════════════════════════════════════════
    3. PING  (GET ?action=ping)
@@ -207,8 +222,34 @@ function callGemini(string $key, string $prompt): ?array {
 }
 
 function callClaude(string $key, string $prompt): ?array {
+    global $CLAUDE_MODELS;
+
+    $lastException = null;
+    foreach ($CLAUDE_MODELS as $model) {
+        try {
+            return callClaudeModel($key, $prompt, $model);
+        } catch (QuotaException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            $lastException = $exception;
+            if (shouldTryNextClaudeModel($exception)) {
+                error_log("[claude-model-fallback][$model] ".$exception->getMessage());
+                continue;
+            }
+            throw $exception;
+        }
+    }
+
+    if ($lastException) {
+        throw $lastException;
+    }
+
+    throw new RuntimeException('Claude model list is empty');
+}
+
+function callClaudeModel(string $key, string $prompt, string $model): ?array {
     $payload = json_encode([
-        'model'      => 'claude-3-5-sonnet-20241022',
+        'model'      => $model,
         'max_tokens' => 2500,
         'messages'   => [['role' => 'user', 'content' => $prompt]],
     ]);
@@ -234,6 +275,14 @@ function callClaude(string $key, string $prompt): ?array {
 
     $d = json_decode($body, true);
     return parseJSON(implode('', array_column($d['content'] ?? [], 'text')));
+}
+
+function shouldTryNextClaudeModel(Throwable $exception): bool {
+    $message = strtolower($exception->getMessage());
+    return str_contains($message, '404')
+        || str_contains($message, 'model')
+        || str_contains($message, 'not found')
+        || str_contains($message, 'unavailable');
 }
 
 function callOpenAI(string $key, string $prompt): ?array {
@@ -312,6 +361,8 @@ function providerHealthSnapshot(string $provider, array $keys, callable $masker)
 }
 
 function probeProvider(string $provider, string $key): void {
+    global $CLAUDE_MODELS;
+
     switch ($provider) {
         case 'gemini':
             [, $code] = curlPost(
@@ -325,20 +376,28 @@ function probeProvider(string $provider, string $key): void {
             break;
 
         case 'claude':
-            [, $code] = curlPost(
-                'https://api.anthropic.com/v1/messages',
-                json_encode([
-                    'model' => 'claude-3-5-sonnet-20241022',
-                    'max_tokens' => 1,
-                    'messages' => [['role' => 'user', 'content' => 'ping']],
-                ]),
-                [
-                    'Content-Type: application/json',
-                    'anthropic-version: 2023-06-01',
-                    'x-api-key: ' . $key,
-                ]
-            );
-            break;
+            $lastException = null;
+            foreach ($CLAUDE_MODELS as $model) {
+                [$body, $code] = probeClaudeModel($key, $model);
+                if ($code === 200) {
+                    return;
+                }
+                if ($code === 429 || ($code === 400 && str_contains($body, 'credit balance'))) {
+                    throw new QuotaException("HTTP {$code}: quota or rate limit");
+                }
+                if (in_array($code, [400, 401, 403], true)) {
+                    throw new RuntimeException("HTTP {$code}: auth or permissions");
+                }
+                $lastException = new RuntimeException("HTTP {$code}: provider unavailable");
+                if (in_array($code, [404, 422], true)) {
+                    continue;
+                }
+                throw $lastException;
+            }
+            if ($lastException) {
+                throw $lastException;
+            }
+            throw new RuntimeException('Claude model list is empty');
 
         case 'openai':
             [, $code] = curlPost(
@@ -373,6 +432,22 @@ function probeProvider(string $provider, string $key): void {
     }
 
     throw new RuntimeException("HTTP {$code}: provider unavailable");
+}
+
+function probeClaudeModel(string $key, string $model): array {
+    return curlPost(
+        'https://api.anthropic.com/v1/messages',
+        json_encode([
+            'model' => $model,
+            'max_tokens' => 1,
+            'messages' => [['role' => 'user', 'content' => 'ping']],
+        ]),
+        [
+            'Content-Type: application/json',
+            'anthropic-version: 2023-06-01',
+            'x-api-key: ' . $key,
+        ]
+    );
 }
 
 function classifyProviderFailure(Throwable $exception, array $masked, int $keyIndex): array {
