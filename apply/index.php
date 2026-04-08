@@ -105,6 +105,11 @@ $_aiStatus = json_encode([
 .b-ai-warn{background:#fef3c7;color:#b45309;border-color:#fcd34d;}
 .b-ai-off{background:#f3f4f6;color:#6b7280;border-color:#d1d5db;}
 .b-merge{background:#fff7ed;color:#c2410c;border-color:#fed7aa;}
+.ai-initials{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;}
+.ai-pill{width:24px;height:24px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;border:1px solid #d1d5db;background:#f8fafc;color:#64748b;}
+.ai-pill.ok{background:#ecfdf5;border-color:#a7f3d0;color:#047857;}
+.ai-pill.warn{background:#fef3c7;border-color:#fcd34d;color:#b45309;}
+.ai-pill.off{background:#f3f4f6;border-color:#d1d5db;color:#6b7280;}
 
 .tab-btn{padding:4px 12px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:1.5px solid #e5e7eb;background:#fff;color:#6b7280;transition:all .2s;}
 .tab-btn.active{background:var(--g);color:#fff;border-color:var(--g);}
@@ -647,7 +652,7 @@ $_aiStatus = json_encode([
       <div class="ext-card border-t-4 border-purple-700">
         <div class="ext-sh">
           <span>📊 GSD Form Coverage</span>
-          <span id="side-provider-badge" class="badge b-ai">⏳ Waiting</span>
+          <div id="side-provider-badge" class="ai-initials" aria-label="AI providers"></div>
         </div>
         <div class="flex items-end gap-3 mb-2">
           <span class="text-4xl font-black text-purple-800" id="cov-pct">0%</span>
@@ -659,9 +664,6 @@ $_aiStatus = json_encode([
       <div class="ext-card">
         <div class="flex gap-1.5 mb-3">
           <button class="tab-btn active" id="tab-merged" onclick="GSD.switchExtTab('merged')">Fields</button>
-          <button class="tab-btn" id="tab-raw" onclick="GSD.switchExtTab('raw')">Raw Text</button>
-          <button class="tab-btn" id="tab-json" onclick="GSD.switchExtTab('json')">JSON</button>
-          <button id="btn-copy-json" onclick="GSD.copyExtJSON()" class="hidden ml-auto tab-btn bg-green-600 text-white border-green-600 hover:bg-green-700">📋 Copy</button>
         </div>
         <div id="view-merged">
           <div class="ext-sh mt-0">
@@ -679,27 +681,6 @@ $_aiStatus = json_encode([
           </div>
           <div id="merged-out"><p class="text-[10px] text-gray-400 italic text-center py-2">Run extraction to see merged data.</p></div>
         </div>
-        <div id="view-raw" class="hidden">
-          <div class="ext-sh">
-            <span id="raw-badge" class="badge b-pdf">...</span>
-            <span id="raw-meta" class="text-[9px] text-gray-400"></span>
-          </div>
-          <textarea class="mono-area" id="raw-txt" rows="18" readonly placeholder="Raw extracted text will appear here..."></textarea>
-          <div class="flex gap-4 mt-1 text-[9px] text-gray-400">
-            <span id="raw-chars"></span><span id="raw-lines"></span>
-          </div>
-        </div>
-        <div id="view-json" class="hidden">
-          <textarea class="mono-area" id="json-out" rows="18" readonly></textarea>
-        </div>
-      </div>
-
-      <div class="ext-card" style="background:#0f172a;">
-        <div class="ext-sh" style="border-color:#1e293b;">
-          <span style="color:#a78bfa;">🔧 Pipeline Log</span>
-          <button onclick="GSD.clearLog()" class="text-[9px] text-slate-500 hover:text-slate-300">Clear</button>
-        </div>
-        <div id="log-box" class="space-y-0 max-h-40 overflow-y-auto"></div>
       </div>
 
     </aside>
@@ -720,11 +701,11 @@ let AI_STATUS = (function() {
 })();
 let AI_HEALTH = null;
 const AI_PROVIDERS = [
-  {key:'claude',label:'Claude',icon:'🟣'},
-  {key:'gemini',label:'Gemini',icon:'🔵'},
-  {key:'openai',label:'OpenAI',icon:'🟢'},
-  {key:'groq',label:'Groq',icon:'🟠'},
-  {key:'openrouter',label:'OpenRouter',icon:'⚪'},
+  {key:'claude',label:'Claude',icon:'🟣',initial:'C'},
+  {key:'gemini',label:'Gemini',icon:'🔵',initial:'G'},
+  {key:'openai',label:'OpenAI',icon:'🟢',initial:'O'},
+  {key:'groq',label:'Groq',icon:'🟠',initial:'Q'},
+  {key:'openrouter',label:'OpenRouter',icon:'⚪',initial:'R'},
 ];
 
 const STEPS = 8;
@@ -1265,8 +1246,8 @@ async function runExtraction() {
     xStep(4,'run');
     finalMerged = mergeData(rxData, aiData);
     renderExtFields('merged-out', finalMerged, 'merge', aiData);
-    document.getElementById('json-out').value = JSON.stringify(finalMerged, null, 2);
-    document.getElementById('btn-copy-json').classList.remove('hidden');
+    const jsonOut = document.getElementById('json-out');
+    if (jsonOut) jsonOut.value = JSON.stringify(finalMerged, null, 2);
     updateCoverage(finalMerged);
     xStep(4,'done');
 
@@ -1538,13 +1519,20 @@ async function pickFile(input, type) {
       xStep(1,'run');
       document.getElementById('ext-pipeline').classList.remove('hidden');
       cvText = file.name.endsWith('.pdf') ? await readPDF(file) : await readDOCX(file);
-      document.getElementById('raw-txt').value = cvText;
-      document.getElementById('raw-chars').textContent = cvText.length + ' chars';
-      document.getElementById('raw-lines').textContent = cvText.split('\n').filter(l => l.trim()).length + ' lines';
+      const rawTxt = document.getElementById('raw-txt');
+      const rawChars = document.getElementById('raw-chars');
+      const rawLines = document.getElementById('raw-lines');
+      const rawBadge = document.getElementById('raw-badge');
+      const rawMeta = document.getElementById('raw-meta');
+      if (rawTxt) rawTxt.value = cvText;
+      if (rawChars) rawChars.textContent = cvText.length + ' chars';
+      if (rawLines) rawLines.textContent = cvText.split('\n').filter(l => l.trim()).length + ' lines';
       const ext = file.name.split('.').pop().toLowerCase();
-      document.getElementById('raw-badge').className = 'badge ' + (ext === 'pdf' ? 'b-pdf' : 'b-docx');
-      document.getElementById('raw-badge').textContent = ext === 'pdf' ? '🔴 PDF.js' : '🔵 mammoth.js';
-      document.getElementById('raw-meta').textContent = file.name + ' · ' + (file.size/1024).toFixed(0) + ' KB';
+      if (rawBadge) {
+        rawBadge.className = 'badge ' + (ext === 'pdf' ? 'b-pdf' : 'b-docx');
+        rawBadge.textContent = ext === 'pdf' ? '🔴 PDF.js' : '🔵 mammoth.js';
+      }
+      if (rawMeta) rawMeta.textContent = file.name + ' · ' + (file.size/1024).toFixed(0) + ' KB';
       const btn = document.getElementById('btn-analyze');
       btn.disabled = false;
       btn.className = btn.className.replace('bg-gray-300','bg-purple-700').replace('text-gray-500','text-white').replace('cursor-not-allowed','cursor-pointer hover:bg-purple-800');
@@ -1610,8 +1598,10 @@ function extLog(msg, type = 'info') {
 
 function switchExtTab(tab) {
   ['merged','raw','json'].forEach(t => {
-    document.getElementById('view-' + t).classList.toggle('hidden', t !== tab);
-    document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+    const view = document.getElementById('view-' + t);
+    const button = document.getElementById('tab-' + t);
+    if (view) view.classList.toggle('hidden', t !== tab);
+    if (button) button.classList.toggle('active', t === tab);
   });
 }
 
@@ -1622,8 +1612,10 @@ function toggleExtPanel() {
 }
 
 function copyExtJSON() {
-  navigator.clipboard.writeText(document.getElementById('json-out').value).then(() => {
-    const btn = document.getElementById('btn-copy-json');
+  const jsonOut = document.getElementById('json-out');
+  const btn = document.getElementById('btn-copy-json');
+  if (!jsonOut || !btn) return;
+  navigator.clipboard.writeText(jsonOut.value).then(() => {
     const orig = btn.textContent;
     btn.textContent = '✅ Copied!';
     setTimeout(() => btn.textContent = orig, 2000);
@@ -1711,8 +1703,9 @@ function providerCardState(provider) {
 function updateProviderBadge(text, tone) {
   const badge = document.getElementById('side-provider-badge');
   if (!badge) return;
-  badge.className = `badge ${tone}`;
-  badge.textContent = text;
+  const fallbackTone = tone === 'b-ai-ok' ? 'ok' : tone === 'b-ai-warn' ? 'warn' : 'off';
+  badge.className = 'ai-initials';
+  badge.innerHTML = `<span class="ai-pill ${fallbackTone}" title="${esc(text)}">${esc(String(text || '?').slice(0,1))}</span>`;
 }
 
 function renderProviderHealth(providerMap) {
@@ -1728,6 +1721,16 @@ function renderProviderHealth(providerMap) {
       <div class="text-[9px] font-bold ${state.name}">${meta.label}</div>
       <div class="text-[8px] ${state.status} font-bold">${state.label}</div>
     </div>`;
+  }).join('');
+
+  const badge = document.getElementById('side-provider-badge');
+  if (!badge) return;
+  badge.className = 'ai-initials';
+  badge.innerHTML = AI_PROVIDERS.map(meta => {
+    const provider = providerMap[meta.key];
+    const state = provider?.healthy ? 'ok' : provider?.configured ? 'warn' : 'off';
+    const title = provider?.message ? `${meta.label}: ${provider.message}` : meta.label;
+    return `<span class="ai-pill ${state}" title="${String(title).replace(/"/g, '&quot;')}">${meta.initial}</span>`;
   }).join('');
 }
 
