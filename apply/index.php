@@ -627,28 +627,17 @@ $_aiStatus = json_encode([
     <!-- ══ RIGHT: CV EXTRACTOR PANEL ══ -->
     <aside id="side-extractor" class="hidden w-full xl:w-[480px] shrink-0 space-y-3 xl:sticky xl:top-20 xl:h-fit xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto">
 
-      <div class="ext-card border-t-4 border-slate-800">
+      <div class="ext-card border-t-4 border-purple-700">
         <div class="ext-sh">
-          <span>⚙️ AI Providers — Server Config</span>
-          <span class="text-[8px] text-green-500 font-bold bg-green-50 px-2 py-0.5 rounded-full border border-green-200">🔒 Via .env</span>
+          <span>📌 Verification Notice</span>
         </div>
-        <div id="sec-api" class="space-y-2">
+        <p class="text-[11px] leading-relaxed text-purple-800 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
+          Important: Any CV-related data highlighted in the corporate purple color must be reviewed and verified before submission.
+        </p>
+        <div id="sec-api" class="hidden">
           <div class="grid grid-cols-3 gap-2" id="ai-provider-status"></div>
-          <p class="text-[9px] text-gray-400 mt-1">
-            🔐 API keys stored server-side in <code class="bg-gray-100 px-1 rounded">.env</code>.
-            Calls route through <code class="bg-gray-100 px-1 rounded">api-proxy4.php</code>.
-          </p>
-          <p class="text-[10px] leading-relaxed text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Important: Any AI-preloaded data highlighted in purple must be reviewed and verified for accuracy before submission.
-          </p>
-          <button onclick="GSD.pingProxy()" class="mt-2 w-full text-[9px] font-bold bg-slate-800 hover:bg-slate-700 text-white py-1.5 rounded-lg transition-all">
-            🔌 Test Proxy Connection
-          </button>
-          <div id="ping-result" class="hidden mt-1 text-[9px] font-mono bg-slate-900 text-green-400 rounded p-2 leading-relaxed max-h-28 overflow-y-auto"></div>
-          <div class="flex items-center gap-2 mt-1">
-            <span class="text-[9px] text-gray-500 font-bold uppercase">Order:</span>
-            <span id="ai-order-disp" class="text-[9px] font-mono text-purple-700 bg-purple-50 px-2 py-0.5 rounded"></span>
-          </div>
+          <div id="ping-result"></div>
+          <span id="ai-order-disp"></span>
         </div>
       </div>
 
