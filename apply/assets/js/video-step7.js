@@ -47,6 +47,10 @@ const GSDVideo = (function () {
   let cameraRunning    = false;
   let cameraReady      = false;
   let selfieSegmentation = null;
+  let segmentationBusy = false;
+  let segmentationLastFrameAt = 0;
+  const SEGMENTATION_FRAME_INTERVAL = 1000 / 24;
+  let segmentationBuffers = null;
 
   let faceEmotions = { happy:0, neutral:0, sad:0, angry:0, surprised:0, fearful:0, disgusted:0 };
   let faceFrames   = 0;
@@ -62,6 +66,44 @@ const GSDVideo = (function () {
   let videoAnalysis  = {};
 
   const $ = id => document.getElementById(id);
+
+  function ensureSegmentationBuffers(W, H) {
+    if (segmentationBuffers && segmentationBuffers.width === W && segmentationBuffers.height === H) {
+      return segmentationBuffers;
+    }
+
+    const makeCanvas = () => {
+      const el = document.createElement('canvas');
+      el.width = W;
+      el.height = H;
+      return el;
+    };
+
+    segmentationBuffers = {
+      width: W,
+      height: H,
+      subject: makeCanvas(),
+      mask: makeCanvas(),
+      smoothMask: makeCanvas(),
+      previousMask: makeCanvas(),
+    };
+
+    return segmentationBuffers;
+  }
+
+  function drawCoverImage(ctx, image, W, H) {
+    const iw = image.naturalWidth || image.videoWidth || image.width || 0;
+    const ih = image.naturalHeight || image.videoHeight || image.height || 0;
+    if (!iw || !ih) return false;
+
+    const scale = Math.max(W / iw, H / ih);
+    const dw = iw * scale;
+    const dh = ih * scale;
+    const dx = (W - dw) / 2;
+    const dy = (H - dh) / 2;
+    ctx.drawImage(image, dx, dy, dw, dh);
+    return true;
+  }
 
   /* ════════════════════════════════════
      1. INIT CAMERA + MEDIAPIPE
@@ -100,12 +142,25 @@ const GSDVideo = (function () {
       selfieSegmentation = new SelfieSegmentation({
         locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`
       });
-      selfieSegmentation.setOptions({ modelSelection: 1, selfieMode: true });
+      selfieSegmentation.setOptions({
+        modelSelection: 0,
+        selfieMode: true
+      });
       selfieSegmentation.onResults(onSegmentResults);
       const vid = $('input_video');
       const cam = new Camera(vid, {
         onFrame: async () => {
-          if (selfieSegmentation && cameraRunning) await selfieSegmentation.send({ image: vid }).catch(()=>{});
+          const now = performance.now();
+          if (!selfieSegmentation || !cameraRunning || segmentationBusy) return;
+          if (now - segmentationLastFrameAt < SEGMENTATION_FRAME_INTERVAL) return;
+          segmentationBusy = true;
+          segmentationLastFrameAt = now;
+          try {
+            await selfieSegmentation.send({ image: vid });
+          } catch (_) {
+          } finally {
+            segmentationBusy = false;
+          }
         },
         width: 1280, height: 720
       });
@@ -121,25 +176,47 @@ const GSDVideo = (function () {
     const bg  = $('bg-image');
     const W = results.image.width, H = results.image.height;
     canvas.width = W; canvas.height = H;
+    ctx.imageSmoothingEnabled = true;
 
-    // Offscreen: person with mask
-    const off = document.createElement('canvas');
-    off.width = W; off.height = H;
-    const octx = off.getContext('2d');
-    octx.drawImage(results.image, 0, 0, W, H);
-    octx.globalCompositeOperation = 'destination-in';
-    octx.drawImage(results.segmentationMask, 0, 0, W, H);
+    const buffers = ensureSegmentationBuffers(W, H);
+    const subjectCtx = buffers.subject.getContext('2d');
+    const maskCtx = buffers.mask.getContext('2d');
+    const smoothMaskCtx = buffers.smoothMask.getContext('2d');
+    const previousMaskCtx = buffers.previousMask.getContext('2d');
+
+    maskCtx.clearRect(0, 0, W, H);
+    maskCtx.save();
+    maskCtx.filter = 'blur(6px) contrast(1.08)';
+    maskCtx.drawImage(results.segmentationMask, 0, 0, W, H);
+    maskCtx.restore();
+
+    smoothMaskCtx.clearRect(0, 0, W, H);
+    smoothMaskCtx.save();
+    smoothMaskCtx.globalAlpha = 0.72;
+    smoothMaskCtx.drawImage(buffers.previousMask, 0, 0, W, H);
+    smoothMaskCtx.globalAlpha = 0.58;
+    smoothMaskCtx.drawImage(buffers.mask, 0, 0, W, H);
+    smoothMaskCtx.restore();
+
+    previousMaskCtx.clearRect(0, 0, W, H);
+    previousMaskCtx.drawImage(buffers.smoothMask, 0, 0, W, H);
+
+    subjectCtx.clearRect(0, 0, W, H);
+    subjectCtx.drawImage(results.image, 0, 0, W, H);
+    subjectCtx.globalCompositeOperation = 'destination-in';
+    subjectCtx.drawImage(buffers.smoothMask, 0, 0, W, H);
+    subjectCtx.globalCompositeOperation = 'source-over';
 
     // Background
     ctx.clearRect(0, 0, W, H);
     if (bg && bg.complete && bg.naturalWidth) {
-      ctx.drawImage(bg, 0, 0, W, H);
+      drawCoverImage(ctx, bg, W, H);
     } else {
       const g = ctx.createLinearGradient(0, 0, W, H);
       g.addColorStop(0, '#2d1b4e'); g.addColorStop(1, '#0f0a1e');
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     }
-    ctx.drawImage(off, 0, 0, W, H);
+    ctx.drawImage(buffers.subject, 0, 0, W, H);
 
     // Watermark
     ctx.save(); ctx.font = 'bold 10px Inter,sans-serif';
