@@ -99,6 +99,8 @@ if (! function_exists('gsdCandidateAiCallProvider')) {
                     'gemini' => gsdCandidateAiCallGemini($provider['key'], $prompt),
                     'openai' => gsdCandidateAiCallOpenAi($provider['key'], $prompt),
                     'claude' => gsdCandidateAiCallClaude($provider['key'], $prompt),
+                    'groq' => gsdCandidateAiCallGroq($provider['key'], $prompt),
+                    'openrouter' => gsdCandidateAiCallOpenRouter($provider['key'], $prompt),
                     default => null,
                 };
 
@@ -118,6 +120,11 @@ if (! function_exists('gsdCandidateAiCallProvider')) {
 if (! function_exists('gsdCandidateAiPersist')) {
     function gsdCandidateAiPersist(PDO $db, array $candidate, array $analysisPayload, array $result): void
     {
+        $candidateTable = gsdCandidateAiResolveTable($db, ['candidates', 'gsd_candidates']);
+        if ($candidateTable === null) {
+            return;
+        }
+
         $biometric = gsdCandidateAiDecodeJson($candidate['biometric_json'] ?? null);
         $biometric['_ai_enrichment'] = [
             'provider' => $result['provider'] ?? 'heuristic',
@@ -129,7 +136,7 @@ if (! function_exists('gsdCandidateAiPersist')) {
         $biometric = array_replace_recursive($biometric, $analysisPayload);
 
         $update = $db->prepare(
-            'UPDATE gsd_candidates
+            'UPDATE '.$candidateTable.'
              SET match_score = :match_score,
                  match_reasoning = :match_reasoning,
                  ai_analysis = :ai_analysis,
@@ -165,12 +172,8 @@ if (! function_exists('gsdCandidateAiPersist')) {
 if (! function_exists('gsdCandidateAiPersistInsight')) {
     function gsdCandidateAiPersistInsight(PDO $db, array $candidate, array $result): void
     {
-        try {
-            $check = $db->query("SHOW TABLES LIKE 'gsd_candidate_ai_insights'");
-            if (! $check || $check->fetchColumn() === false) {
-                return;
-            }
-        } catch (Throwable) {
+        $insightTable = gsdCandidateAiResolveTable($db, ['candidate_ai_insights', 'gsd_candidate_ai_insights']);
+        if ($insightTable === null) {
             return;
         }
 
@@ -192,12 +195,12 @@ if (! function_exists('gsdCandidateAiPersistInsight')) {
             ':overall_score' => (float) ($result['overall_score'] ?? $result['match_score'] ?? 0),
         ];
 
-        $existing = $db->prepare('SELECT id FROM gsd_candidate_ai_insights WHERE candidate_token = ? ORDER BY id DESC LIMIT 1');
+        $existing = $db->prepare('SELECT id FROM '.$insightTable.' WHERE candidate_token = ? ORDER BY id DESC LIMIT 1');
         $existing->execute([(string) $candidate['token']]);
         $existingId = $existing->fetchColumn();
 
         if ($existingId) {
-            $sql = 'UPDATE gsd_candidate_ai_insights
+            $sql = 'UPDATE '.$insightTable.'
                     SET original_filename = :original_filename,
                         visual_analysis = :visual_analysis,
                         english_analysis = :english_analysis,
@@ -211,7 +214,7 @@ if (! function_exists('gsdCandidateAiPersistInsight')) {
         }
 
         $insert = $db->prepare(
-            'INSERT INTO gsd_candidate_ai_insights
+            'INSERT INTO '.$insightTable.'
                 (candidate_token, original_filename, visual_analysis, english_analysis, behavioral_analysis, overall_score)
              VALUES
                 (:candidate_token, :original_filename, :visual_analysis, :english_analysis, :behavioral_analysis, :overall_score)'
@@ -229,10 +232,10 @@ if (! function_exists('gsdCandidateAiPrompt')) {
         );
 
         $jobsContext = [];
+        $jobsTable = gsdCandidateAiResolveTable($db, ['jobs', 'gsd_jobs']);
         try {
-            $hasJobs = $db->query("SHOW TABLES LIKE 'gsd_jobs'")->fetchColumn();
-            if ($hasJobs) {
-                $jobs = $db->query('SELECT title, description FROM gsd_jobs ORDER BY id ASC LIMIT 8')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            if ($jobsTable !== null) {
+                $jobs = $db->query('SELECT title, description FROM '.$jobsTable.' ORDER BY id ASC LIMIT 8')->fetchAll(PDO::FETCH_ASSOC) ?: [];
                 foreach ($jobs as $job) {
                     $jobsContext[] = ($job['title'] ?? 'Open role').': '.mb_substr((string) ($job['description'] ?? ''), 0, 180);
                 }
@@ -348,6 +351,24 @@ if (! function_exists('gsdCandidateAiMergeResult')) {
     }
 }
 
+if (! function_exists('gsdCandidateAiResolveTable')) {
+    function gsdCandidateAiResolveTable(PDO $db, array $candidates): ?string
+    {
+        foreach ($candidates as $table) {
+            try {
+                $check = $db->query("SHOW TABLES LIKE ".$db->quote($table));
+                if ($check && $check->fetchColumn() !== false) {
+                    return $table;
+                }
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        return null;
+    }
+}
+
 if (! function_exists('gsdCandidateAiProviders')) {
     function gsdCandidateAiParseKeys(string $raw): array
     {
@@ -373,6 +394,8 @@ if (! function_exists('gsdCandidateAiProviders')) {
             'gemini' => gsdCandidateAiParseKeys((string) gsdRecruitmentEnv('GEMINI_API_KEY', '')),
             'claude' => gsdCandidateAiParseKeys((string) gsdRecruitmentEnv('CLAUDE_API_KEY', '')),
             'openai' => gsdCandidateAiParseKeys((string) gsdRecruitmentEnv('OPENAI_API_KEY', '')),
+            'groq' => gsdCandidateAiParseKeys((string) gsdRecruitmentEnv('GROQ_API_KEY', '')),
+            'openrouter' => gsdCandidateAiParseKeys((string) gsdRecruitmentEnv('OPENROUTER_API_KEY', '')),
         ];
 
         $providers = [];
@@ -445,28 +468,133 @@ if (! function_exists('gsdCandidateAiCallOpenAi')) {
 if (! function_exists('gsdCandidateAiCallClaude')) {
     function gsdCandidateAiCallClaude(string $key, string $prompt): ?array
     {
-        $payload = json_encode([
-            'model' => 'claude-3-5-sonnet-20241022',
-            'max_tokens' => 2200,
-            'messages' => [['role' => 'user', 'content' => $prompt]],
-        ]);
-
-        [$body, $code] = gsdCandidateAiCurlPost(
-            'https://api.anthropic.com/v1/messages',
-            $payload,
+        $models = gsdCandidateAiParseModelOrder(
+            (string) gsdRecruitmentEnv('CLAUDE_MODEL_ORDER', ''),
             [
-                'Content-Type: application/json',
-                'anthropic-version: 2023-06-01',
-                'x-api-key: '.$key,
+                'claude-sonnet-4-20250514',
+                'claude-3-7-sonnet-20250219',
+                'claude-3-5-sonnet-20241022',
+                'claude-3-5-haiku-20241022',
             ]
         );
 
-        if ($code !== 200) {
-            throw new RuntimeException('Claude HTTP '.$code);
+        foreach ($models as $model) {
+            $payload = json_encode([
+                'model' => $model,
+                'max_tokens' => 2200,
+                'messages' => [['role' => 'user', 'content' => $prompt]],
+            ]);
+
+            [$body, $code] = gsdCandidateAiCurlPost(
+                'https://api.anthropic.com/v1/messages',
+                $payload,
+                [
+                    'Content-Type: application/json',
+                    'anthropic-version: 2023-06-01',
+                    'x-api-key: '.$key,
+                ]
+            );
+
+            if ($code !== 200) {
+                continue;
+            }
+
+            $json = json_decode($body, true);
+            $parsed = gsdCandidateAiParseJson(implode('', array_column($json['content'] ?? [], 'text')));
+            if (is_array($parsed) && $parsed !== []) {
+                return $parsed;
+            }
         }
 
-        $json = json_decode($body, true);
-        return gsdCandidateAiParseJson(implode('', array_column($json['content'] ?? [], 'text')));
+        throw new RuntimeException('Claude HTTP 404');
+    }
+}
+
+if (! function_exists('gsdCandidateAiParseModelOrder')) {
+    function gsdCandidateAiParseModelOrder(string $raw, array $defaults): array
+    {
+        $models = array_values(array_filter(array_map('trim', preg_split('/\s*,\s*/', trim($raw)) ?: [])));
+        return $models !== [] ? $models : $defaults;
+    }
+}
+
+if (! function_exists('gsdCandidateAiCallGroq')) {
+    function gsdCandidateAiCallGroq(string $key, string $prompt): ?array
+    {
+        return gsdCandidateAiCallOpenAiCompatible(
+            'https://api.groq.com/openai/v1/chat/completions',
+            $key,
+            $prompt,
+            gsdCandidateAiParseModelOrder(
+                (string) gsdRecruitmentEnv('GROQ_MODEL_ORDER', ''),
+                [
+                    'llama-3.3-70b-versatile',
+                    'openai/gpt-oss-120b',
+                    'llama-3.1-8b-instant',
+                ]
+            )
+        );
+    }
+}
+
+if (! function_exists('gsdCandidateAiCallOpenRouter')) {
+    function gsdCandidateAiCallOpenRouter(string $key, string $prompt): ?array
+    {
+        return gsdCandidateAiCallOpenAiCompatible(
+            'https://openrouter.ai/api/v1/chat/completions',
+            $key,
+            $prompt,
+            gsdCandidateAiParseModelOrder(
+                (string) gsdRecruitmentEnv('OPENROUTER_MODEL_ORDER', ''),
+                [
+                    'openai/gpt-4o-mini',
+                    'meta-llama/llama-3.3-70b-instruct',
+                    'anthropic/claude-3.5-sonnet',
+                ]
+            ),
+            [
+                'HTTP-Referer: https://candidates.gsdoutsource.com',
+                'X-Title: GSD Candidates ATS',
+            ]
+        );
+    }
+}
+
+if (! function_exists('gsdCandidateAiCallOpenAiCompatible')) {
+    function gsdCandidateAiCallOpenAiCompatible(string $url, string $key, string $prompt, array $models, array $extraHeaders = []): ?array
+    {
+        foreach ($models as $model) {
+            $payload = json_encode([
+                'model' => $model,
+                'temperature' => 0.15,
+                'response_format' => ['type' => 'json_object'],
+                'messages' => [
+                    ['role' => 'system', 'content' => 'Return only valid JSON.'],
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+            ]);
+
+            [$body, $code] = gsdCandidateAiCurlPost(
+                $url,
+                $payload,
+                array_merge([
+                    'Content-Type: application/json',
+                    'Authorization: Bearer '.$key,
+                ], $extraHeaders)
+            );
+
+            if ($code !== 200) {
+                continue;
+            }
+
+            $json = json_decode($body, true);
+            $parsed = gsdCandidateAiParseJson($json['choices'][0]['message']['content'] ?? '');
+            if (is_array($parsed) && $parsed !== []) {
+                return $parsed;
+            }
+        }
+
+        return null;
     }
 }
 
