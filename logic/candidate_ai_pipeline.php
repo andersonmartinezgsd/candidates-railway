@@ -944,66 +944,79 @@ if (! function_exists('gsdCandidateAiTranscriptSummary')) {
 if (! function_exists('gsdCandidateAiTranscribeMedia')) {
     function gsdCandidateAiTranscribeMedia(array $candidate): ?array
     {
-        $keys = gsdCandidateAiParseKeys((string) gsdRecruitmentEnv('OPENAI_API_KEY', ''));
-        if ($keys === []) {
+        $providers = [
+            [
+                'name' => 'openai',
+                'keys' => gsdCandidateAiParseKeys((string) gsdRecruitmentEnv('OPENAI_API_KEY', '')),
+                'url' => 'https://api.openai.com/v1/audio/transcriptions',
+                'models' => ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'whisper-1'],
+                'max_size' => 25 * 1024 * 1024,
+                'headers' => [],
+            ],
+            [
+                'name' => 'groq',
+                'keys' => gsdCandidateAiParseKeys((string) gsdRecruitmentEnv('GROQ_API_KEY', '')),
+                'url' => 'https://api.groq.com/openai/v1/audio/transcriptions',
+                'models' => gsdCandidateAiParseModelOrder(
+                    (string) gsdRecruitmentEnv('GROQ_TRANSCRIBE_MODEL_ORDER', ''),
+                    ['whisper-large-v3-turbo', 'whisper-large-v3']
+                ),
+                'max_size' => 25 * 1024 * 1024,
+                'headers' => [],
+            ],
+        ];
+
+        $hasAnyKey = false;
+        foreach ($providers as $provider) {
+            if (($provider['keys'] ?? []) !== []) {
+                $hasAnyKey = true;
+                break;
+            }
+        }
+
+        if (! $hasAnyKey) {
             return null;
         }
 
-        $filePath = gsdCandidateAiResolveMediaPath($candidate);
-        if ($filePath === null || ! is_file($filePath)) {
+        $filePaths = gsdCandidateAiResolveMediaPaths($candidate);
+        if ($filePaths === []) {
             return null;
         }
 
-        $fileSize = filesize($filePath);
-        if (! is_int($fileSize) || $fileSize <= 0 || $fileSize > 25 * 1024 * 1024) {
-            return null;
-        }
+        foreach ($filePaths as $filePath) {
+            $fileSize = filesize($filePath);
+            if (! is_int($fileSize) || $fileSize <= 0) {
+                continue;
+            }
 
-        foreach ($keys as $key) {
-            foreach (['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'whisper-1'] as $model) {
-                try {
-                    $ch = curl_init('https://api.openai.com/v1/audio/transcriptions');
-                    $payload = [
-                        'file' => new CURLFile($filePath),
-                        'model' => $model,
-                        'response_format' => 'json',
-                    ];
-                    curl_setopt_array($ch, [
-                        CURLOPT_RETURNTRANSFER => true,
-                        CURLOPT_POST => true,
-                        CURLOPT_POSTFIELDS => $payload,
-                        CURLOPT_HTTPHEADER => ['Authorization: Bearer '.$key],
-                        CURLOPT_TIMEOUT => 120,
-                        CURLOPT_SSL_VERIFYPEER => true,
-                        CURLOPT_USERAGENT => 'GSD-ATS-HR/1.0',
-                    ]);
+            foreach ($providers as $provider) {
+                if (($provider['keys'] ?? []) === []) {
+                    continue;
+                }
 
-                    $body = curl_exec($ch);
-                    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                    $error = curl_error($ch);
-                    curl_close($ch);
+                if ($fileSize > (int) ($provider['max_size'] ?? PHP_INT_MAX)) {
+                    continue;
+                }
 
-                    if ($body === false) {
-                        throw new RuntimeException('Transcription cURL failed: '.$error);
+                foreach ((array) $provider['keys'] as $key) {
+                    foreach ((array) $provider['models'] as $model) {
+                        try {
+                            $result = gsdCandidateAiTranscribeWithProvider(
+                                (string) $provider['url'],
+                                (string) $key,
+                                $filePath,
+                                (string) $model,
+                                (string) $provider['name'],
+                                (array) ($provider['headers'] ?? [])
+                            );
+
+                            if (is_array($result) && trim((string) ($result['text'] ?? '')) !== '') {
+                                return $result;
+                            }
+                        } catch (Throwable $exception) {
+                            error_log('[candidate-ai] transcription failed: '.$exception->getMessage());
+                        }
                     }
-
-                    if ($code !== 200) {
-                        continue;
-                    }
-
-                    $json = json_decode($body, true);
-                    $text = trim((string) ($json['text'] ?? ''));
-                    if ($text === '') {
-                        continue;
-                    }
-
-                    return [
-                        'provider' => $model,
-                        'text' => $text,
-                        'language_code' => (string) ($json['language'] ?? ''),
-                    ];
-                } catch (Throwable $exception) {
-                    error_log('[candidate-ai] transcription failed: '.$exception->getMessage());
                 }
             }
         }
@@ -1012,28 +1025,82 @@ if (! function_exists('gsdCandidateAiTranscribeMedia')) {
     }
 }
 
-if (! function_exists('gsdCandidateAiResolveMediaPath')) {
-    function gsdCandidateAiResolveMediaPath(array $candidate): ?string
+if (! function_exists('gsdCandidateAiTranscribeWithProvider')) {
+    function gsdCandidateAiTranscribeWithProvider(string $url, string $key, string $filePath, string $model, string $provider, array $extraHeaders = []): ?array
     {
-        $relative = trim((string) (($candidate['video_processed_path'] ?? '') ?: ($candidate['video_original_path'] ?? '')));
-        if ($relative === '') {
+        $payload = [
+            'file' => new CURLFile($filePath),
+            'model' => $model,
+            'response_format' => 'json',
+        ];
+
+        $headers = array_merge([
+            'Authorization: Bearer '.$key,
+        ], $extraHeaders);
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_TIMEOUT => 120,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_USERAGENT => 'GSD-ATS-HR/1.0',
+        ]);
+
+        $body = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if ($body === false) {
+            throw new RuntimeException('Transcription cURL failed: '.$error);
+        }
+
+        if ($code !== 200) {
             return null;
         }
 
-        $normalized = ltrim($relative, '/');
-        $candidates = [
-            dirname(__DIR__).'/apply/'.$normalized,
-            dirname(__DIR__).'/'.$normalized,
-            dirname(__DIR__, 2).'/hostinger-release/public_html/candidates/'.$normalized,
-        ];
+        $json = json_decode($body, true);
+        $text = trim((string) ($json['text'] ?? ''));
+        if ($text === '') {
+            return null;
+        }
 
-        foreach ($candidates as $path) {
-            if (is_file($path)) {
-                return $path;
+        return [
+            'provider' => $provider.':'.$model,
+            'text' => $text,
+            'language_code' => (string) ($json['language'] ?? ''),
+        ];
+    }
+}
+
+if (! function_exists('gsdCandidateAiResolveMediaPaths')) {
+    function gsdCandidateAiResolveMediaPaths(array $candidate): array
+    {
+        $relatives = array_values(array_filter(array_unique([
+            trim((string) ($candidate['video_original_path'] ?? '')),
+            trim((string) ($candidate['video_processed_path'] ?? '')),
+        ])));
+
+        $paths = [];
+        foreach ($relatives as $relative) {
+            $normalized = ltrim($relative, '/');
+            foreach ([
+                dirname(__DIR__).'/'.$normalized,
+                dirname(__DIR__).'/apply/'.$normalized,
+                dirname(__DIR__, 2).'/hostinger-release/public_html/candidates/'.$normalized,
+            ] as $path) {
+                if (is_file($path)) {
+                    $paths[$path] = filesize($path) ?: PHP_INT_MAX;
+                }
             }
         }
 
-        return null;
+        asort($paths);
+
+        return array_keys($paths);
     }
 }
 
