@@ -180,18 +180,25 @@ if (! function_exists('gsdCandidateAiPersistInsight')) {
         $payload = [
             ':candidate_token' => (string) $candidate['token'],
             ':original_filename' => basename((string) (($candidate['video_original_path'] ?? '') ?: ($candidate['video_processed_path'] ?? ''))),
-            ':visual_analysis' => json_encode([
+            ':visual_analysis' => json_encode(array_filter([
+                'status' => $result['visual_analysis']['status'] ?? null,
+                'source' => $result['visual_analysis']['source'] ?? null,
                 'dominant_emotion' => $result['visual_analysis']['dominant_emotion'] ?? null,
+                'score' => $result['visual_analysis']['score'] ?? null,
+                'alignment_score' => $result['visual_analysis']['alignment_score'] ?? null,
                 'expression_summary' => $result['visual_analysis']['summary'] ?? null,
                 'gesture_word_alignment' => $result['gesture_word_alignment'] ?? null,
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'alignment_summary' => $result['visual_analysis']['alignment_summary'] ?? null,
+            ], static fn (mixed $value): bool => $value !== null && $value !== ''), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             ':english_analysis' => json_encode($result['english_analysis'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            ':behavioral_analysis' => json_encode([
+            ':behavioral_analysis' => json_encode(array_filter([
+                'status' => $result['spontaneity_analysis']['status'] ?? null,
+                'source' => $result['spontaneity_analysis']['source'] ?? null,
                 'spontaneity_analysis' => $result['spontaneity_analysis'] ?? null,
                 'role_scores' => $result['role_scores'] ?? [],
                 'best_position' => $result['best_position'] ?? null,
                 'transcript_analysis' => $result['transcript_analysis'] ?? null,
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ], static fn (mixed $value): bool => $value !== null && $value !== ''), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             ':overall_score' => (float) ($result['overall_score'] ?? $result['match_score'] ?? 0),
         ];
 
@@ -295,6 +302,11 @@ if (! function_exists('gsdCandidateAiHtmlSummary')) {
         $strengths = $result['behavioral_analysis']['candidate_summary']['strengths'] ?? [];
         $risks = $result['behavioral_analysis']['candidate_summary']['risks'] ?? [];
         $roleItems = array_slice($result['role_scores'] ?? [], 0, 4);
+        $englishLevel = (string) (($result['english_analysis']['level'] ?? '') ?: 'Pending');
+        $englishSummary = (string) (($result['english_analysis']['summary'] ?? '') ?: 'Pending');
+        $spontaneityLabel = (string) (($result['spontaneity_analysis']['label'] ?? '') ?: 'Pending');
+        $spontaneitySummary = (string) (($result['spontaneity_analysis']['summary'] ?? '') ?: 'Pending');
+        $visualSummary = (string) (($result['visual_analysis']['summary'] ?? '') ?: 'Pending');
 
         $roleList = implode('', array_map(static function (array $role): string {
             return '<li><strong>'.htmlspecialchars($role['label']).'</strong>: '.(int) $role['score'].'/100 - '.htmlspecialchars((string) $role['reason']).'</li>';
@@ -309,12 +321,12 @@ if (! function_exists('gsdCandidateAiHtmlSummary')) {
             .'<h4>Communication & English</h4>'
             .'<ul>'
             .'<li><strong>Transcript:</strong> '.htmlspecialchars((string) ($result['transcript_analysis']['summary'] ?? 'No transcript analysis available')).'</li>'
-            .'<li><strong>English:</strong> '.htmlspecialchars((string) (($result['english_analysis']['level'] ?? 'N/A').' - '.($result['english_analysis']['summary'] ?? 'Pending'))).'</li>'
-            .'<li><strong>Spontaneity:</strong> '.htmlspecialchars((string) (($result['spontaneity_analysis']['label'] ?? 'Pending').' - '.($result['spontaneity_analysis']['summary'] ?? 'Pending'))).'</li>'
+            .'<li><strong>English:</strong> '.htmlspecialchars($englishLevel.' - '.$englishSummary).'</li>'
+            .'<li><strong>Spontaneity:</strong> '.htmlspecialchars($spontaneityLabel.' - '.$spontaneitySummary).'</li>'
             .'</ul>'
             .'<h4>Visual & Behavioral</h4>'
             .'<ul>'
-            .'<li><strong>Emotion / expression:</strong> '.htmlspecialchars((string) ($result['visual_analysis']['summary'] ?? 'Pending')).'</li>'
+            .'<li><strong>Emotion / expression:</strong> '.htmlspecialchars($visualSummary).'</li>'
             .'<li><strong>Gesture vs words:</strong> '.htmlspecialchars((string) ($result['gesture_word_alignment']['summary'] ?? 'Pending')).'</li>'
             .'</ul>'
             .'<h4>Role Ranking</h4>'
@@ -771,6 +783,7 @@ if (! function_exists('gsdCandidateAiEnglishSummary')) {
     function gsdCandidateAiEnglishSummary(array $candidate, string $transcript, string $cvText): array
     {
         $baseText = trim($transcript) !== '' ? $transcript : $cvText;
+        $wordCount = str_word_count($baseText);
         $analysis = function_exists('getEnglishLevelAnalysis')
             ? getEnglishLevelAnalysis($baseText)
             : ['english_level' => 'N/A', 'english_score' => 0];
@@ -780,12 +793,25 @@ if (! function_exists('gsdCandidateAiEnglishSummary')) {
             (string) ($candidate['english_listening'] ?? ''),
         ])));
 
+        if ($wordCount < 12 && $declared === '') {
+            return [
+                'status' => 'pending',
+                'source' => 'missing_evidence',
+                'level' => null,
+                'score' => null,
+                'summary' => 'Not enough transcript or CV evidence is available yet to evaluate English reliably.',
+                'declared_assessment' => null,
+            ];
+        }
+
         $summary = 'Transcript complexity, vocabulary breadth and fluency were used to estimate English performance.';
         if ($declared !== '') {
             $summary .= ' Declared assessment: '.$declared.'.';
         }
 
         return [
+            'status' => 'ready',
+            'source' => trim($transcript) !== '' ? 'transcript' : 'cv',
             'level' => (string) ($analysis['english_level'] ?? 'N/A'),
             'score' => (int) ($analysis['english_score'] ?? 0),
             'summary' => $summary,
@@ -798,8 +824,20 @@ if (! function_exists('gsdCandidateAiVisualSummary')) {
     function gsdCandidateAiVisualSummary(array $analysisPayload, array $candidate, array $sentiment): array
     {
         $face = $analysisPayload['facial_analysis'] ?? gsdCandidateAiDecodeJson($candidate['biometric_json'] ?? null);
-        $dominant = (string) ($face['dominant'] ?? $candidate['dominant_emotion'] ?? 'neutral');
+        $dominant = (string) ($face['dominant'] ?? $candidate['dominant_emotion'] ?? '');
         $averages = is_array($face['averages'] ?? null) ? $face['averages'] : [];
+        if ($averages === [] && $dominant === '') {
+            return [
+                'status' => 'pending',
+                'source' => 'missing_evidence',
+                'dominant_emotion' => null,
+                'score' => null,
+                'alignment_score' => null,
+                'summary' => 'No FaceAPI or biometric evidence has been captured yet for this candidate.',
+                'alignment_summary' => 'Run FaceAPI on the stored video to generate a current visual assessment.',
+            ];
+        }
+
         $happy = (float) ($averages['happy'] ?? 0);
         $neutral = (float) ($averages['neutral'] ?? 0);
         $negative = (float) (($averages['sad'] ?? 0) + ($averages['angry'] ?? 0) + ($averages['fearful'] ?? 0) + ($averages['disgusted'] ?? 0));
@@ -807,6 +845,8 @@ if (! function_exists('gsdCandidateAiVisualSummary')) {
         $alignmentScore = (int) max(0, min(100, 100 - abs($visualScore - (int) $sentiment['score'])));
 
         return [
+            'status' => 'ready',
+            'source' => $averages !== [] ? 'faceapi' : 'stored_emotion',
             'dominant_emotion' => $dominant,
             'score' => $visualScore,
             'alignment_score' => $alignmentScore,
@@ -824,6 +864,16 @@ if (! function_exists('gsdCandidateAiSpontaneitySummary')) {
     function gsdCandidateAiSpontaneitySummary(string $transcript, string $cvText): array
     {
         $lower = mb_strtolower($transcript);
+        if (str_word_count($transcript) < 20) {
+            return [
+                'status' => 'pending',
+                'source' => 'short_transcript',
+                'score' => null,
+                'label' => null,
+                'summary' => 'Transcript is still too short to evaluate spontaneity or detect reading reliably.',
+            ];
+        }
+
         $readingMarkers = [
             'thank you for this opportunity',
             'i am applying for',
@@ -850,6 +900,8 @@ if (! function_exists('gsdCandidateAiSpontaneitySummary')) {
         $label = $score >= 70 ? 'Likely spontaneous' : ($score >= 45 ? 'Mixed' : 'Likely scripted');
 
         return [
+            'status' => 'ready',
+            'source' => 'transcript',
             'score' => $score,
             'label' => $label,
             'summary' => $label === 'Likely spontaneous'
