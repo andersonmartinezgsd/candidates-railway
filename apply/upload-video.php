@@ -193,8 +193,9 @@ try {
     }
 
     /* ─── Base upload directory ─── */
-    // Adjust this path to match your server structure
-    $baseDir   = __DIR__ . '/uploads/' . $token . '/';
+    // Canonical public uploads live under /candidates/uploads, not /candidates/apply/uploads
+    $uploadsRoot = dirname(__DIR__) . '/uploads/';
+    $baseDir   = $uploadsRoot . $token . '/';
     $originDir = $baseDir . 'originals/';
     $docDir    = $baseDir . 'documents/';
     $anaDir    = $baseDir . 'analysis/';
@@ -308,10 +309,10 @@ try {
     /* ─── Response ─── */
     $scheme = isset($_SERVER['HTTPS']) ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'];
-    // Detect subdirectory (e.g., /prb-recruitment)
     $scriptPath = dirname($_SERVER['SCRIPT_NAME']);
     $scriptPath = $scriptPath === '/' ? '' : $scriptPath;
-    $baseUrl = $scheme . '://' . $host . $scriptPath;
+    $applyBaseUrl = $scheme . '://' . $host . $scriptPath;
+    $publicBaseUrl = $scheme . '://' . $host;
     
     out([
         'status'       => 'ok',
@@ -321,12 +322,12 @@ try {
         'ai'           => $dbResult['ai'] ?? null,
         'errors'       => $errors,
         'video_url'    => isset($savedFiles['video_original_path'])
-                            ? $baseUrl . '/' . $savedFiles['video_original_path']
+                            ? $publicBaseUrl . '/' . ltrim($savedFiles['video_original_path'], '/')
                             : null,
         'cv_url'       => isset($savedFiles['cv_file_path'])
-                            ? $baseUrl . '/' . $savedFiles['cv_file_path']
+                            ? $publicBaseUrl . '/' . ltrim($savedFiles['cv_file_path'], '/')
                             : null,
-        'candidate_url'=> $baseUrl . "/views/new-candidate.php?token={$token}",
+        'candidate_url'=> $applyBaseUrl . "/views/new-candidate.php?token={$token}",
     ]);
 
 } catch (Throwable $e) {
