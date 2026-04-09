@@ -87,6 +87,12 @@ $_aiStatus = json_encode([
 /* ══ EXTRACTOR SIDE PANEL ══ */
 .ext-card{background:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid #e5e7eb;margin-bottom:10px;}
 .ext-sh{font-size:10px;font-weight:800;color:#374151;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #f3f4f6;padding-bottom:8px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;}
+.verification-card{border-top:5px solid #6d28d9;box-shadow:0 10px 28px rgba(109,40,217,.12);}
+.verification-body{border:1px solid #d8b4fe;background:linear-gradient(135deg,#faf5ff,#f5f3ff);border-radius:18px;padding:16px 18px;}
+.verification-title{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;color:#581c87;}
+.verification-icon{display:inline-flex;width:28px;height:28px;align-items:center;justify-content:center;border-radius:999px;background:#6d28d9;color:#fff;box-shadow:0 6px 16px rgba(109,40,217,.24);}
+.verification-copy{margin-top:10px;font-size:13px;line-height:1.75;color:#4c1d95;font-weight:800;}
+.verification-hint{margin-top:8px;font-size:11px;line-height:1.6;color:#6b21a8;}
 
 .ef{background:#f9fafb;border:1px solid #e5e7eb;border-radius:7px;padding:8px 12px;margin-bottom:6px;border-left:4px solid #e5e7eb;}
 .ef label{display:block;font-size:8px;font-weight:800;color:var(--g);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;}
@@ -106,11 +112,14 @@ $_aiStatus = json_encode([
 .b-ai-warn{background:#fef3c7;color:#b45309;border-color:#fcd34d;}
 .b-ai-off{background:#f3f4f6;color:#6b7280;border-color:#d1d5db;}
 .b-merge{background:#fff7ed;color:#c2410c;border-color:#fed7aa;}
-.ai-initials{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;}
-.ai-pill{width:24px;height:24px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;border:1px solid #d1d5db;background:#f8fafc;color:#64748b;}
-.ai-pill.ok{background:#ecfdf5;border-color:#a7f3d0;color:#047857;}
-.ai-pill.warn{background:#fef3c7;border-color:#fcd34d;color:#b45309;}
-.ai-pill.off{background:#f3f4f6;border-color:#d1d5db;color:#6b7280;}
+.ai-initials{display:flex;justify-content:flex-end;}
+.ai-semaphore{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;}
+.ai-semaphore-label{font-size:10px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;color:#6b7280;}
+.ai-semaphore-lights{display:flex;gap:6px;}
+.ai-light{width:10px;height:10px;border-radius:999px;background:#e5e7eb;box-shadow:inset 0 0 0 1px rgba(15,23,42,.08);}
+.ai-light.green.active{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18);}
+.ai-light.yellow.active{background:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.2);}
+.ai-light.red.active{background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.18);}
 
 .tab-btn{padding:4px 12px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:1.5px solid #e5e7eb;background:#fff;color:#6b7280;transition:all .2s;}
 .tab-btn.active{background:var(--g);color:#fff;border-color:var(--g);}
@@ -628,13 +637,22 @@ $_aiStatus = json_encode([
     <!-- ══ RIGHT: CV EXTRACTOR PANEL ══ -->
     <aside id="side-extractor" class="hidden w-full xl:w-[480px] shrink-0 space-y-3 xl:sticky xl:top-20 xl:h-fit xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto">
 
-      <div class="ext-card border-t-4 border-purple-700">
+      <div class="ext-card verification-card">
         <div class="ext-sh">
           <span>📌 Verification Notice</span>
         </div>
-        <p class="text-[11px] leading-relaxed text-purple-800 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
-          Important: Any CV-related data highlighted in the corporate purple color must be reviewed and verified before submission.
-        </p>
+        <div class="verification-body">
+          <div class="verification-title">
+            <span class="verification-icon">!</span>
+            <span>Important manual verification required</span>
+          </div>
+          <p class="verification-copy">
+            Any CV-related data highlighted in the corporate purple color must be reviewed and verified before submission.
+          </p>
+          <p class="verification-hint">
+            Please confirm names, dates, companies, locations, compensation, and role-specific details before continuing.
+          </p>
+        </div>
         <div id="sec-api" class="hidden">
           <div class="grid grid-cols-3 gap-2" id="ai-provider-status"></div>
           <div id="ping-result"></div>
@@ -1696,9 +1714,16 @@ function providerCardState(provider) {
 function updateProviderBadge(text, tone) {
   const badge = document.getElementById('side-provider-badge');
   if (!badge) return;
-  const fallbackTone = tone === 'b-ai-ok' ? 'ok' : tone === 'b-ai-warn' ? 'warn' : 'off';
   badge.className = 'ai-initials';
-  badge.innerHTML = `<span class="ai-pill ${fallbackTone}" title="${esc(text)}">${esc(String(text || '?').slice(0,1))}</span>`;
+  const state = tone === 'b-ai-ok' ? 'green' : tone === 'b-ai-warn' ? 'yellow' : 'red';
+  badge.innerHTML = `<span class="ai-semaphore" title="${esc(text)}" aria-label="${esc(text)}">
+    <span class="ai-semaphore-label">AI</span>
+    <span class="ai-semaphore-lights">
+      <span class="ai-light green ${state === 'green' ? 'active' : ''}"></span>
+      <span class="ai-light yellow ${state === 'yellow' ? 'active' : ''}"></span>
+      <span class="ai-light red ${state === 'red' ? 'active' : ''}"></span>
+    </span>
+  </span>`;
 }
 
 function renderProviderHealth(providerMap) {
@@ -1716,15 +1741,23 @@ function renderProviderHealth(providerMap) {
     </div>`;
   }).join('');
 
-  const badge = document.getElementById('side-provider-badge');
-  if (!badge) return;
-  badge.className = 'ai-initials';
-  badge.innerHTML = AI_PROVIDERS.map(meta => {
+  const allHealthy = AI_PROVIDERS.every(meta => providerMap[meta.key]?.healthy);
+  const anyConfiguredIssue = AI_PROVIDERS.some(meta => {
     const provider = providerMap[meta.key];
-    const state = provider?.healthy ? 'ok' : provider?.configured ? 'warn' : 'off';
-    const title = provider?.message ? `${meta.label}: ${provider.message}` : meta.label;
-    return `<span class="ai-pill ${state}" title="${String(title).replace(/"/g, '&quot;')}">${meta.initial}</span>`;
-  }).join('');
+    return provider && provider.configured && !provider.healthy;
+  });
+
+  if (allHealthy) {
+    updateProviderBadge('AI connected', 'b-ai-ok');
+    return;
+  }
+
+  if (anyConfiguredIssue) {
+    updateProviderBadge('AI connection issue detected', 'b-ai-warn');
+    return;
+  }
+
+  updateProviderBadge('No AI providers available', 'b-ai-off');
 }
 
 function applyProviderHealth(health) {
