@@ -76,9 +76,9 @@ function diskCandidatesForRelative(string $relativePath, string $format): array
         } else {
             $variants[] = preg_replace('/\.[^.]+$/', '.mp4', $relativePath) ?: $relativePath;
         }
+    } else {
+        $variants[] = $relativePath;
     }
-
-    $variants[] = $relativePath;
     $variants = array_values(array_unique(array_filter($variants)));
 
     $roots = [
