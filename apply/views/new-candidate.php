@@ -369,12 +369,52 @@ $technicalGroups = [
             color: #f59e0b;
             transform: translateY(-1px);
         }
+
+        .candidate-shell {
+            min-height: 100vh;
+        }
+
+        .candidate-media-shell {
+            width: 100%;
+            max-width: 1180px;
+        }
+
+        .candidate-sidebar {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .candidate-sidebar-body {
+            min-height: 0;
+        }
+
+        @media (min-width: 1280px) {
+            .candidate-shell {
+                max-height: 100vh;
+                overflow: hidden;
+            }
+
+            .candidate-sidebar {
+                height: 100vh;
+                overflow: hidden;
+            }
+
+            .candidate-sidebar-head {
+                position: sticky;
+                top: 0;
+                z-index: 20;
+            }
+
+            .candidate-sidebar-body {
+                overflow-y: auto;
+            }
+        }
     </style>
 </head>
 <body class="min-h-screen">
-    <div class="mx-auto flex min-h-screen max-w-[1800px] flex-col xl:flex-row">
+    <div class="candidate-shell mx-auto flex max-w-[1800px] flex-col xl:flex-row xl:items-stretch">
         <section class="flex min-h-[48vh] flex-1 flex-col border-b border-[var(--gsd-border)] bg-[var(--gsd-deep)] text-white xl:min-h-screen xl:border-b-0 xl:border-r">
-            <div class="flex flex-col gap-4 px-6 py-5 md:px-10 lg:flex-row lg:items-center lg:justify-between">
+            <div class="mx-auto flex w-full max-w-[1180px] flex-col gap-4 px-6 py-5 md:px-8 lg:flex-row lg:items-center lg:justify-between xl:px-10">
                 <div class="flex items-center gap-4">
                     <img src="../assets/images/iconGSD.png" alt="GSD" class="h-11 w-11 rounded-2xl bg-white/10 p-2 shadow-lg shadow-black/20">
                     <div>
@@ -388,7 +428,7 @@ $technicalGroups = [
                 </div>
             </div>
 
-            <div class="flex flex-wrap gap-3 px-6 pb-5 md:px-10">
+            <div class="mx-auto flex w-full max-w-[1180px] flex-wrap gap-3 px-6 pb-5 md:px-8 xl:px-10">
                 <span class="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold">
                     <?php echo htmlspecialchars((string) ($candidate['position_interest'] ?: 'Candidate')); ?>
                 </span>
@@ -400,16 +440,16 @@ $technicalGroups = [
                 </span>
             </div>
 
-            <div class="flex flex-1 items-center justify-center px-4 pb-6 md:px-8 xl:pb-8">
+            <div class="flex flex-1 items-start justify-center px-4 pb-6 pt-2 md:px-8 md:pb-8 xl:px-10 xl:pt-0">
                 <?php if ($videoUrl !== ''): ?>
-                    <div class="w-full h-[45vh] overflow-hidden rounded-[28px] border border-white/10 bg-black shadow-2xl shadow-black/25 md:h-auto">
+                    <div class="candidate-media-shell overflow-hidden rounded-[28px] border border-white/10 bg-black shadow-2xl shadow-black/25">
                         <video
                             id="candidateVideoNew"
                             controls
                             playsinline
                             webkit-playsinline
                             preload="metadata"
-                            class="h-full w-full bg-black object-contain md:aspect-video"
+                            class="h-[42vh] w-full bg-black object-contain sm:h-[50vh] md:h-auto md:aspect-video"
                             style="background-color:black;"
                         >
                             <source src="<?php echo htmlspecialchars($mp4StreamUrl); ?>" type="video/mp4">
@@ -418,7 +458,7 @@ $technicalGroups = [
                         </video>
                     </div>
                 <?php else: ?>
-                    <div class="flex aspect-video w-full flex-col items-center justify-center rounded-[28px] border border-dashed border-white/20 bg-white/5 px-8 text-center">
+                    <div class="candidate-media-shell flex min-h-[42vh] flex-col items-center justify-center rounded-[28px] border border-dashed border-white/20 bg-white/5 px-8 text-center md:aspect-video md:min-h-0">
                         <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/10 text-2xl">
                             <i class="fa-solid fa-video-slash"></i>
                         </div>
@@ -431,8 +471,8 @@ $technicalGroups = [
             </div>
         </section>
 
-        <aside class="flex w-full flex-col bg-transparent xl:max-w-[560px]">
-            <div class="border-b border-[var(--gsd-border)] bg-white/80 px-6 py-5 backdrop-blur md:px-8">
+        <aside class="candidate-sidebar w-full bg-transparent xl:max-w-[560px]">
+            <div class="candidate-sidebar-head border-b border-[var(--gsd-border)] bg-white/90 px-6 py-5 backdrop-blur md:px-8">
                 <div class="flex flex-wrap items-start justify-between gap-4">
                     <div>
                         <p class="ui-label text-[11px] text-[var(--gsd-muted)]">Profile overview</p>
@@ -451,7 +491,7 @@ $technicalGroups = [
                 </div>
             </div>
 
-            <div class="custom-scroll flex-1 overflow-y-auto px-6 py-6 md:px-8">
+            <div class="candidate-sidebar-body custom-scroll flex-1 px-6 py-6 md:px-8">
                 <div class="space-y-6">
                     <section class="rounded-[28px] border border-[var(--gsd-border)] bg-[var(--gsd-surface)] p-6 shadow-[0_20px_60px_rgba(90,57,136,0.08)]">
                         <p class="ui-label text-[11px] text-[var(--gsd-muted)]">Key facts</p>
