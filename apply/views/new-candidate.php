@@ -55,7 +55,30 @@ function pathToPublicUrl(?string $path): string
         return $path;
     }
 
-    return rtrim(gsdRecruitmentUploadsBaseUrl(), '/').'/'.ltrim($path, '/');
+    $path = str_replace('\\', '/', $path);
+
+    if (str_contains($path, '/uploads/')) {
+        $path = substr($path, strpos($path, '/uploads/') + 1);
+    } elseif (! str_starts_with($path, 'uploads/')) {
+        $path = 'uploads/'.ltrim($path, '/');
+    }
+
+    $explicitBase = trim((string) (gsdRecruitmentUploadsBaseUrl() ?: ''));
+    $portalBase = $explicitBase !== ''
+        ? preg_replace('#/apply(?:/views)?$#', '', rtrim($explicitBase, '/')) ?? rtrim($explicitBase, '/')
+        : '';
+
+    if ($portalBase === '') {
+        $https = (
+            (! empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (string) ($_SERVER['SERVER_PORT'] ?? '') === '443'
+        );
+        $scheme = $https ? 'https' : 'http';
+        $host = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
+        $portalBase = $scheme.'://'.$host;
+    }
+
+    return rtrim($portalBase, '/').'/'.ltrim($path, '/');
 }
 
 function videoMimeType(string $url): string
@@ -142,8 +165,12 @@ $aiEnrichment = decodeJsonValue($biometric['_ai_enrichment'] ?? null);
 $aiAnalysis = decodeJsonValue($candidate['ai_analysis'] ?? null);
 $cvPreview = trim((string) ($candidate['cv_text_preview'] ?? ''));
 $transcript = trim((string) ($candidate['transcript'] ?? ''));
-$videoUrl = pathToPublicUrl($candidate['video_processed_path'] ?: $candidate['video_original_path'] ?: '');
+$videoPath = (string) ($candidate['video_processed_path'] ?: $candidate['video_original_path'] ?: '');
+$videoUrl = pathToPublicUrl($videoPath);
 $videoMime = $videoUrl !== '' ? videoMimeType($videoUrl) : 'video/mp4';
+$streamBaseUrl = 'stream.php?token='.rawurlencode((string) $candidate['token']);
+$mp4StreamUrl = $streamBaseUrl.'&format=mp4';
+$defaultStreamUrl = $streamBaseUrl;
 $cvUrl = pathToPublicUrl($candidate['cv_filename'] ?? '');
 $analysisScore = (float) ($candidate['match_score'] ?: ($aiAnalysis['combined_score'] ?? $candidate['sentiment_score'] ?? 0));
 $aiHighlights = flattenAiInsights($aiAnalysis);
@@ -204,6 +231,7 @@ $technicalGroups = [
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Candidate review | <?php echo htmlspecialchars($candidate['name']); ?></title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <style>
@@ -374,10 +402,19 @@ $technicalGroups = [
 
             <div class="flex flex-1 items-center justify-center px-4 pb-6 md:px-8 xl:pb-8">
                 <?php if ($videoUrl !== ''): ?>
-                    <div class="w-full overflow-hidden rounded-[28px] border border-white/10 bg-black shadow-2xl shadow-black/25">
-                        <video controls autoplay class="aspect-video w-full bg-black object-contain">
-                            <source src="<?php echo htmlspecialchars($videoUrl); ?>" type="<?php echo htmlspecialchars($videoMime); ?>">
-                            Your browser does not support embedded video.
+                    <div class="w-full h-[45vh] overflow-hidden rounded-[28px] border border-white/10 bg-black shadow-2xl shadow-black/25 md:h-auto">
+                        <video
+                            id="candidateVideoNew"
+                            controls
+                            playsinline
+                            webkit-playsinline
+                            preload="metadata"
+                            class="h-full w-full bg-black object-contain md:aspect-video"
+                            style="background-color:black;"
+                        >
+                            <source src="<?php echo htmlspecialchars($mp4StreamUrl); ?>" type="video/mp4">
+                            <source src="<?php echo htmlspecialchars($defaultStreamUrl); ?>" type="<?php echo htmlspecialchars($videoMime); ?>">
+                            Your browser does not support embedded video. Please try Chrome, Safari, or update your device.
                         </video>
                     </div>
                 <?php else: ?>
