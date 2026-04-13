@@ -1903,27 +1903,37 @@ async function submitApplication() {
     
     if (j.status === 'ok' || j.token) {
       // 1. Mostrar mensaje de éxito en la web
+      const applicantName = (document.getElementById('f-name')?.value || '').trim() || 'Candidate';
       document.getElementById('form-wrap').innerHTML = `
-        <div class="sc border-t-4 border-green-500 text-center py-10">
-          <div class="text-5xl mb-4">🎉</div>
-          <h2 class="text-2xl font-black text-green-700 mb-2">Application Completed!</h2>
-          <p class="text-gray-500 mb-2">Your application has been completed successfully.</p>
-          <p class="text-gray-500 mb-2">Redirecting you to WhatsApp to confirm the final step...</p>
-          <p class="text-sm font-semibold text-[var(--gsd-primary)]">Support line: +1 (510) 214-3287</p>
+        <div class="sc overflow-hidden border border-purple-200 bg-gradient-to-br from-white via-purple-50 to-fuchsia-50 text-center shadow-[0_20px_60px_rgba(90,57,136,.12)]">
+          <div class="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-[var(--g)] to-[var(--gl)] text-4xl text-white shadow-[0_16px_40px_rgba(90,57,136,.28)]">✓</div>
+          <p class="mb-2 text-[11px] font-black uppercase tracking-[0.32em] text-[var(--g)]">GSD Associates</p>
+          <h2 class="mb-3 text-3xl font-black text-[var(--gd)]">Application Completed</h2>
+          <p class="mx-auto mb-2 max-w-xl text-sm leading-7 text-gray-600">
+            Thank you, <span class="font-bold text-[var(--gd)]">${applicantName}</span>. Your application has been successfully submitted to the GSD Associates recruitment team.
+          </p>
+          <p class="mx-auto mb-5 max-w-xl text-sm leading-7 text-gray-600">
+            We are preparing the final handoff to WhatsApp so your review link and confirmation can be shared in one place.
+          </p>
+          <div class="mx-auto mb-5 flex max-w-xl flex-wrap items-center justify-center gap-3 rounded-2xl border border-purple-200 bg-white/80 px-4 py-4">
+            <span class="rounded-full bg-purple-100 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.22em] text-[var(--g)]">Final Step</span>
+            <span class="text-sm font-semibold text-gray-600">Redirecting to WhatsApp now</span>
+          </div>
+          <p class="text-sm font-bold text-[var(--g)]">Support line: +1 (510) 214-3287</p>
         </div>`;
 
       // 2. Configurar la redirección a WhatsApp
       const BOT_PHONE = "15102143287";
       const reviewUrl = `${window.location.origin}${window.location.pathname.replace(/index\.php$/, '')}views/new-candidate.php?token=${encodeURIComponent(SESSION_TOKEN)}`;
       const WA_MESSAGE = encodeURIComponent(
-        `I have completed my application.\nReview link: ${reviewUrl}`
+        `Hello GSD Associates team,\n\nI have completed my application and I am sharing my review link below for follow-up.\n\nCandidate: ${applicantName}\nReview link: ${reviewUrl}\n\nThank you.`
       );
       const waUrl = `https://wa.me/${BOT_PHONE}?text=${WA_MESSAGE}`;
 
-      // 3. Redirigir después de 2 segundos para que el usuario vea el éxito
+      // 3. Redirigir después de 3 segundos para que el usuario vea el éxito
       setTimeout(() => {
         window.location.href = waUrl;
-      }, 2000);
+      }, 3000);
 
     } else {
       if (btn) { btn.disabled = false; btn.textContent = 'Submit Application'; }
