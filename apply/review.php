@@ -618,7 +618,10 @@ function showFinalSuccess() {
   
   // WhatsApp completion handoff
   const BOT_PHONE = "15102143287";
-  const WA_MESSAGE = encodeURIComponent("I have completed my application");
+  const reviewUrl = `${BASE_URL}views/new-candidate.php?token=${encodeURIComponent(TOKEN)}`;
+  const WA_MESSAGE = encodeURIComponent(
+    `I have completed my application.\nReview link: ${reviewUrl}`
+  );
   const waUrl = `https://wa.me/${BOT_PHONE}?text=${WA_MESSAGE}`;
 
   el.innerHTML = `

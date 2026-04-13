@@ -1914,7 +1914,10 @@ async function submitApplication() {
 
       // 2. Configurar la redirección a WhatsApp
       const BOT_PHONE = "15102143287";
-      const WA_MESSAGE = encodeURIComponent("I have completed my application");
+      const reviewUrl = `${window.location.origin}${window.location.pathname.replace(/index\.php$/, '')}views/new-candidate.php?token=${encodeURIComponent(SESSION_TOKEN)}`;
+      const WA_MESSAGE = encodeURIComponent(
+        `I have completed my application.\nReview link: ${reviewUrl}`
+      );
       const waUrl = `https://wa.me/${BOT_PHONE}?text=${WA_MESSAGE}`;
 
       // 3. Redirigir después de 2 segundos para que el usuario vea el éxito
