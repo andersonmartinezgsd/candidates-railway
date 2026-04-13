@@ -1906,14 +1906,15 @@ async function submitApplication() {
       document.getElementById('form-wrap').innerHTML = `
         <div class="sc border-t-4 border-green-500 text-center py-10">
           <div class="text-5xl mb-4">🎉</div>
-          <h2 class="text-2xl font-black text-green-700 mb-2">Application Submitted!</h2>
-          <p class="text-gray-500 mb-4">Redirecting you back to WhatsApp to finish...</p>
+          <h2 class="text-2xl font-black text-green-700 mb-2">Application Completed!</h2>
+          <p class="text-gray-500 mb-2">Your application has been completed successfully.</p>
+          <p class="text-gray-500 mb-2">Redirecting you to WhatsApp to confirm the final step...</p>
+          <p class="text-sm font-semibold text-[var(--gsd-primary)]">Support line: +1 (510) 214-3287</p>
         </div>`;
 
       // 2. Configurar la redirección a WhatsApp
-      // IMPORTANTE: Coloca tu número de WhatsApp del bot aquí (Solo números con código de país)
-      const BOT_PHONE = "573103083169"; 
-      const WA_MESSAGE = encodeURIComponent("termine mi postulacion");
+      const BOT_PHONE = "15102143287";
+      const WA_MESSAGE = encodeURIComponent("I have completed my application");
       const waUrl = `https://wa.me/${BOT_PHONE}?text=${WA_MESSAGE}`;
 
       // 3. Redirigir después de 2 segundos para que el usuario vea el éxito
