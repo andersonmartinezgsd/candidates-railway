@@ -10,7 +10,7 @@
  *   ├── documents/id.jpg|pdf
  *   ├── documents/photo.jpg
  *   └── analysis/video_analysis.json
- * Updates DB: gsd_candidates
+ * Updates DB: draft candidates table first, then official on final submit
  * ════════════════════════════════════════a════════════════════════
  */
 
@@ -479,12 +479,12 @@ function saveToDatabase(string $token, array $post, array $files, array $analysi
         $professionalTitle = $title1 !== '' ? $title1 : $positionInterest;
         $aiAnalysisText = $aiAnalysisJson ?: ($summary !== '' ? $summary : null);
 
-        $check = $pdo->prepare("SELECT id FROM gsd_candidates WHERE token = ? LIMIT 1");
-        $check->execute([$token]);
-        $exists = $check->fetchColumn();
+        $targetTable = gsdEnsureDraftCandidateTable($pdo);
+        $existingDraft = gsdFindCandidateByToken($pdo, $token, [$targetTable]);
+        $exists = is_array($existingDraft);
 
         if ($exists) {
-            $sql = "UPDATE gsd_candidates SET
+            $sql = "UPDATE `{$targetTable}` SET
                 type='candidate',
                 first_name=:first_name, last_name=:last_name, name=:name,
                 professional_title=:professional_title, position_interest=:position_interest,
@@ -508,7 +508,7 @@ function saveToDatabase(string $token, array $post, array $files, array $analysi
                 is_main=1, updated_at=NOW()
                 WHERE token=:token";
         } else {
-            $sql = "INSERT INTO gsd_candidates
+            $sql = "INSERT INTO `{$targetTable}`
                 (token, type, first_name, last_name, name, professional_title, position_interest,
                  email, linked_in_url, phone, whatsapp, home_address, city, country, postal_code,
                  referrer, video_original_path, photo_path, id_card_path, processing_status,
@@ -577,9 +577,12 @@ function saveToDatabase(string $token, array $post, array $files, array $analysi
                 ':prev_worked_healthcare' => normalizeYesNo($workHc),
                 ':prev_worked_va'    => normalizeYesNo($workVa),
             ]);
-            $candidateIdStmt = $pdo->prepare('SELECT * FROM gsd_candidates WHERE token = ? LIMIT 1');
+            $candidateIdStmt = $pdo->prepare('SELECT * FROM `'.$targetTable.'` WHERE token = ? LIMIT 1');
             $candidateIdStmt->execute([$token]);
             $candidateRow = $candidateIdStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+            if (is_array($candidateRow)) {
+                $candidateRow['__table'] = $targetTable;
+            }
 
             $aiResult = null;
             if (is_array($candidateRow)) {

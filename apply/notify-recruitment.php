@@ -75,7 +75,11 @@ function markNotified(string $token): void {
             require_once $p;
             $pdo = function_exists('getDB') ? getDB() : (new Database())->getConnection();
             if ($pdo) {
-                $pdo->prepare("UPDATE gsd_candidates SET processing_status='reviewing', updated_at=NOW() WHERE token=?")->execute([$token]);
+                $candidate = gsdPromoteDraftCandidate($pdo, $token);
+                $officialTable = gsdOfficialCandidateTable($pdo);
+                if ($candidate && $officialTable) {
+                    $pdo->prepare('UPDATE `'.$officialTable.'` SET processing_status=\'reviewing\', updated_at=NOW() WHERE token=?')->execute([$token]);
+                }
             }
         } catch (Throwable $e) { error_log('[notify] DB: ' . $e->getMessage()); }
         return;

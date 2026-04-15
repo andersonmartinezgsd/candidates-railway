@@ -80,9 +80,11 @@ $_serverReviewData = [];
 
 try {
     $pdo = getDB();
-    $candidateStmt = $pdo->prepare('SELECT * FROM gsd_candidates WHERE token = ? LIMIT 1');
-    $candidateStmt->execute([$_token]);
-    $candidate = $candidateStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    $candidate = gsdFindCandidateByToken(
+        $pdo,
+        $_token,
+        array_values(array_filter([gsdOfficialCandidateTable($pdo), gsdDraftCandidateTable($pdo)]))
+    );
 
     if (is_array($candidate)) {
         $aiInsightStmt = $pdo->prepare('SELECT * FROM gsd_candidate_ai_insights WHERE candidate_token = ? ORDER BY id DESC LIMIT 1');

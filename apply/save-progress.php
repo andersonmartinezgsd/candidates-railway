@@ -202,36 +202,11 @@ function buildDraftPayload(string $token, array $data): array {
 }
 
 function ensureDraftCandidate(PDO $db, string $token): void {
-    $check = $db->prepare('SELECT id FROM gsd_candidates WHERE token = ? LIMIT 1');
-    $check->execute([$token]);
-
-    if ($check->fetchColumn()) {
-        return;
-    }
-
-    $insert = $db->prepare("INSERT INTO gsd_candidates (token, type, name, email, processing_status, is_main, created_at, updated_at) VALUES (?, 'candidate', 'Draft Candidate', ?, 'pending', 1, NOW(), NOW())");
-    $insert->execute([$token, 'draft+'.strtolower($token).'@local.gsd']);
+    gsdEnsureDraftCandidateRow($db, $token);
 }
 
 function upsertDraftCandidate(PDO $db, string $token, array $payload): void {
-    ensureDraftCandidate($db, $token);
-
-    $sets = [];
-    $values = [];
-
-    foreach ($payload as $column => $value) {
-        if ($column === 'token') {
-            continue;
-        }
-
-        $sets[] = "`{$column}` = ?";
-        $values[] = $value;
-    }
-
-    $values[] = $token;
-
-    $db->prepare('UPDATE gsd_candidates SET '.implode(', ', $sets).', updated_at = NOW() WHERE token = ?')
-        ->execute($values);
+    gsdUpsertDraftCandidate($db, $token, $payload);
 }
 
 function decodeJsonColumn(?string $value): array {
@@ -387,14 +362,19 @@ try {
             $db = getDB();
 
             if ($token) {
-                $stmt = $db->prepare("SELECT * FROM gsd_candidates WHERE token = ? LIMIT 1");
-                $stmt->execute([$token]);
+                $row = gsdFindCandidateByToken(
+                    $db,
+                    $token,
+                    array_values(array_filter([gsdDraftCandidateTable($db), gsdOfficialCandidateTable($db)]))
+                );
             } else {
-                $stmt = $db->prepare("SELECT * FROM gsd_candidates WHERE email = ? ORDER BY updated_at DESC LIMIT 1");
-                $stmt->execute([$email]);
+                $row = gsdFindCandidateByEmail(
+                    $db,
+                    $email,
+                    array_values(array_filter([gsdDraftCandidateTable($db), gsdOfficialCandidateTable($db)]))
+                );
             }
 
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$row) {
                 out(['status'=>'not_found','message'=>'No saved application found for that ' . ($token ? 'token' : 'email') . '.'], 404);
             }
@@ -415,10 +395,18 @@ try {
             if (!$token) out(['status'=>'error','message'=>'token required'], 400);
 
             $db   = getDB();
-            $stmt = $db->prepare("UPDATE gsd_candidates SET processing_status = 'reviewing', updated_at = NOW() WHERE token = ?");
-            $stmt->execute([$token]);
+            $candidate = gsdPromoteDraftCandidate($db, $token);
+            if (! is_array($candidate)) {
+                out(['status'=>'error','message'=>'Token not found'], 404);
+            }
 
-            if ($stmt->rowCount() === 0) out(['status'=>'error','message'=>'Token not found'], 404);
+            $officialTable = gsdOfficialCandidateTable($db);
+            if (! is_string($officialTable) || $officialTable === '') {
+                out(['status'=>'error','message'=>'Official candidates table not found'], 500);
+            }
+
+            $stmt = $db->prepare('UPDATE `'.$officialTable.'` SET processing_status = \'reviewing\', updated_at = NOW() WHERE token = ?');
+            $stmt->execute([$token]);
             out(['status'=>'ok','message'=>'Application submitted successfully','token'=>$token]);
         }
 

@@ -30,9 +30,11 @@ try {
     }
 
     $pdo = getDB();
-    $stmt = $pdo->prepare('SELECT * FROM gsd_candidates WHERE token = ? LIMIT 1');
-    $stmt->execute([$token]);
-    $candidate = $stmt->fetch(PDO::FETCH_ASSOC);
+    $candidate = gsdFindCandidateByToken(
+        $pdo,
+        $token,
+        array_values(array_filter([gsdDraftCandidateTable($pdo), gsdOfficialCandidateTable($pdo)]))
+    );
 
     if (! is_array($candidate)) {
         respond(['status' => 'error', 'message' => 'Candidate not found'], 404);

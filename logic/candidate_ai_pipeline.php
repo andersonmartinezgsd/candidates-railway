@@ -120,7 +120,9 @@ if (! function_exists('gsdCandidateAiCallProvider')) {
 if (! function_exists('gsdCandidateAiPersist')) {
     function gsdCandidateAiPersist(PDO $db, array $candidate, array $analysisPayload, array $result): void
     {
-        $candidateTable = gsdCandidateAiResolveTable($db, ['candidates', 'gsd_candidates']);
+        $candidateTable = is_string($candidate['__table'] ?? null) && ($candidate['__table'] ?? '') !== ''
+            ? (string) $candidate['__table']
+            : gsdCandidateAiResolveTable($db, ['candidates', 'gsd_candidates', 'candidate_drafts', 'gsd_candidate_drafts']);
         if ($candidateTable === null) {
             return;
         }
