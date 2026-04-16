@@ -570,7 +570,7 @@ function renderStars($rating) {
             setTimeout(() => { toast.classList.add('translate-y-20', 'opacity-0'); setTimeout(() => toast.remove(), 500); }, 4000);
         }
 
-        const candidateShareBase = <?php echo json_encode(gsdRecruitmentBaseUrl('viewer/candidate.php')); ?>;
+        const candidateShareBase = <?php echo json_encode(gsdRecruitmentBaseUrl('apply/views/candidate-feedback.php')); ?>;
 
         function copyLink(btn, token) {
             const shareUrl = `${candidateShareBase}?token=${encodeURIComponent(token)}`;

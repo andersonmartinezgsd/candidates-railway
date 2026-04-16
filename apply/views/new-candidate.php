@@ -484,11 +484,6 @@ $technicalGroups = [
                         <a href="#candidate-feedback" class="rounded-full border border-[var(--gsd-border)] bg-white px-4 py-2 text-sm font-semibold text-[var(--gsd-primary)] transition hover:bg-[var(--gsd-soft)]">
                             <i class="fa-regular fa-message mr-2"></i>Jump to feedback
                         </a>
-                        <?php if ($cvUrl !== ''): ?>
-                            <a href="<?php echo htmlspecialchars($cvUrl); ?>" target="_blank" rel="noreferrer" class="rounded-full border border-[var(--gsd-border)] bg-[var(--gsd-soft)] px-4 py-2 text-sm font-semibold text-[var(--gsd-primary)] transition hover:bg-white">
-                                <i class="fa-regular fa-file-pdf mr-2"></i>Open CV
-                            </a>
-                        <?php endif; ?>
                     </div>
                 </div>
             </div>

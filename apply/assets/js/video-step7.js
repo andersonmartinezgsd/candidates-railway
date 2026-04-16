@@ -64,6 +64,9 @@ const GSDVideo = (function () {
 
   let finalVideoBlob = null;
   let videoAnalysis  = {};
+  const TARGET_VIDEO_WIDTH = 1280;
+  const TARGET_VIDEO_HEIGHT = 720;
+  const SUBJECT_SCALE_FACTOR = 0.94;
 
   const $ = id => document.getElementById(id);
 
@@ -105,6 +108,45 @@ const GSDVideo = (function () {
     return true;
   }
 
+  function drawContainImage(ctx, image, W, H, scaleFactor = 1) {
+    const iw = image.naturalWidth || image.videoWidth || image.width || 0;
+    const ih = image.naturalHeight || image.videoHeight || image.height || 0;
+    if (!iw || !ih) return false;
+
+    const scale = Math.min((W * scaleFactor) / iw, (H * scaleFactor) / ih);
+    const dw = iw * scale;
+    const dh = ih * scale;
+    const dx = (W - dw) / 2;
+    const dy = (H - dh) / 2;
+    ctx.drawImage(image, dx, dy, dw, dh);
+    return true;
+  }
+
+  function drawCorporateBackdrop(ctx, W, H) {
+    const bg = $('bg-image');
+    ctx.clearRect(0, 0, W, H);
+    if (bg && bg.complete && bg.naturalWidth) {
+      drawCoverImage(ctx, bg, W, H);
+      return;
+    }
+
+    const gradient = ctx.createLinearGradient(0, 0, W, H);
+    gradient.addColorStop(0, '#2d1b4e');
+    gradient.addColorStop(.55, '#1a0f2e');
+    gradient.addColorStop(1, '#0f0a1e');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function drawFrameWatermark(ctx, W, H) {
+    ctx.save();
+    ctx.font = 'bold 16px Inter,sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,.24)';
+    ctx.textAlign = 'right';
+    ctx.fillText('GSD Associates | Smart Recruitment', W - 22, H - 24);
+    ctx.restore();
+  }
+
   /* ════════════════════════════════════
      1. INIT CAMERA + MEDIAPIPE
   ════════════════════════════════════ */
@@ -114,7 +156,12 @@ const GSDVideo = (function () {
 
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width:{ideal:1280}, height:{ideal:720}, facingMode:'user' },
+        video: {
+          width: { ideal: TARGET_VIDEO_WIDTH },
+          height: { ideal: TARGET_VIDEO_HEIGHT },
+          aspectRatio: { ideal: TARGET_VIDEO_WIDTH / TARGET_VIDEO_HEIGHT },
+          facingMode: 'user'
+        },
         audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true, sampleRate:48000 }
       });
 
@@ -162,7 +209,7 @@ const GSDVideo = (function () {
             segmentationBusy = false;
           }
         },
-        width: 1280, height: 720
+        width: TARGET_VIDEO_WIDTH, height: TARGET_VIDEO_HEIGHT
       });
       cameraRunning = true;
       cam.start().then(res).catch(() => { startRawLoop(); res(); });
@@ -173,55 +220,46 @@ const GSDVideo = (function () {
     const canvas = $('output_canvas');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const bg  = $('bg-image');
-    const W = results.image.width, H = results.image.height;
-    canvas.width = W; canvas.height = H;
+    const sourceWidth = results.image.width;
+    const sourceHeight = results.image.height;
+    const W = TARGET_VIDEO_WIDTH;
+    const H = TARGET_VIDEO_HEIGHT;
+    canvas.width = W;
+    canvas.height = H;
     ctx.imageSmoothingEnabled = true;
 
-    const buffers = ensureSegmentationBuffers(W, H);
+    const buffers = ensureSegmentationBuffers(sourceWidth, sourceHeight);
     const subjectCtx = buffers.subject.getContext('2d');
     const maskCtx = buffers.mask.getContext('2d');
     const smoothMaskCtx = buffers.smoothMask.getContext('2d');
     const previousMaskCtx = buffers.previousMask.getContext('2d');
 
-    maskCtx.clearRect(0, 0, W, H);
+    maskCtx.clearRect(0, 0, sourceWidth, sourceHeight);
     maskCtx.save();
     maskCtx.filter = 'blur(6px) contrast(1.08)';
-    maskCtx.drawImage(results.segmentationMask, 0, 0, W, H);
+    maskCtx.drawImage(results.segmentationMask, 0, 0, sourceWidth, sourceHeight);
     maskCtx.restore();
 
-    smoothMaskCtx.clearRect(0, 0, W, H);
+    smoothMaskCtx.clearRect(0, 0, sourceWidth, sourceHeight);
     smoothMaskCtx.save();
     smoothMaskCtx.globalAlpha = 0.72;
-    smoothMaskCtx.drawImage(buffers.previousMask, 0, 0, W, H);
+    smoothMaskCtx.drawImage(buffers.previousMask, 0, 0, sourceWidth, sourceHeight);
     smoothMaskCtx.globalAlpha = 0.58;
-    smoothMaskCtx.drawImage(buffers.mask, 0, 0, W, H);
+    smoothMaskCtx.drawImage(buffers.mask, 0, 0, sourceWidth, sourceHeight);
     smoothMaskCtx.restore();
 
-    previousMaskCtx.clearRect(0, 0, W, H);
-    previousMaskCtx.drawImage(buffers.smoothMask, 0, 0, W, H);
+    previousMaskCtx.clearRect(0, 0, sourceWidth, sourceHeight);
+    previousMaskCtx.drawImage(buffers.smoothMask, 0, 0, sourceWidth, sourceHeight);
 
-    subjectCtx.clearRect(0, 0, W, H);
-    subjectCtx.drawImage(results.image, 0, 0, W, H);
+    subjectCtx.clearRect(0, 0, sourceWidth, sourceHeight);
+    subjectCtx.drawImage(results.image, 0, 0, sourceWidth, sourceHeight);
     subjectCtx.globalCompositeOperation = 'destination-in';
-    subjectCtx.drawImage(buffers.smoothMask, 0, 0, W, H);
+    subjectCtx.drawImage(buffers.smoothMask, 0, 0, sourceWidth, sourceHeight);
     subjectCtx.globalCompositeOperation = 'source-over';
 
-    // Background
-    ctx.clearRect(0, 0, W, H);
-    if (bg && bg.complete && bg.naturalWidth) {
-      drawCoverImage(ctx, bg, W, H);
-    } else {
-      const g = ctx.createLinearGradient(0, 0, W, H);
-      g.addColorStop(0, '#2d1b4e'); g.addColorStop(1, '#0f0a1e');
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    }
-    ctx.drawImage(buffers.subject, 0, 0, W, H);
-
-    // Watermark
-    ctx.save(); ctx.font = 'bold 10px Inter,sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.textAlign = 'right';
-    ctx.fillText('GSD Associates | Smart Recruitment', W - 12, H - 12); ctx.restore();
+    drawCorporateBackdrop(ctx, W, H);
+    drawContainImage(ctx, buffers.subject, W, H, SUBJECT_SCALE_FACTOR);
+    drawFrameWatermark(ctx, W, H);
   }
 
   function startRawLoop() {
@@ -230,11 +268,11 @@ const GSDVideo = (function () {
     (function loop() {
       if (!cameraRunning) return;
       if (vid && vid.videoWidth) {
-        canvas.width = vid.videoWidth; canvas.height = vid.videoHeight;
-        ctx.drawImage(vid, 0, 0);
-        ctx.save(); ctx.font = 'bold 10px Inter,sans-serif';
-        ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.textAlign = 'right';
-        ctx.fillText('GSD Associates | Smart Recruitment', canvas.width-12, canvas.height-12); ctx.restore();
+        canvas.width = TARGET_VIDEO_WIDTH;
+        canvas.height = TARGET_VIDEO_HEIGHT;
+        drawCorporateBackdrop(ctx, TARGET_VIDEO_WIDTH, TARGET_VIDEO_HEIGHT);
+        drawContainImage(ctx, vid, TARGET_VIDEO_WIDTH, TARGET_VIDEO_HEIGHT, SUBJECT_SCALE_FACTOR);
+        drawFrameWatermark(ctx, TARGET_VIDEO_WIDTH, TARGET_VIDEO_HEIGHT);
       }
       requestAnimationFrame(loop);
     })();
