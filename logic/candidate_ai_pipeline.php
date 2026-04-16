@@ -8,7 +8,7 @@ if (! function_exists('gsdCandidateAiAnalyzeAndPersist')) {
     function gsdCandidateAiAnalyzeAndPersist(PDO $db, array $candidate, array $analysisPayload = []): array
     {
         $transcript = trim((string) ($analysisPayload['transcript'] ?? $candidate['transcript'] ?? ''));
-        if (str_word_count($transcript) < 8) {
+        if (gsdCandidateAiWordCount($transcript) < 8) {
             $transcription = gsdCandidateAiTranscribeMedia($candidate);
             if (is_array($transcription) && trim((string) ($transcription['text'] ?? '')) !== '') {
                 $transcript = trim((string) $transcription['text']);
@@ -160,7 +160,7 @@ if (! function_exists('gsdCandidateAiPersist')) {
             ':transcript' => (string) (($result['transcript_analysis']['transcript'] ?? $candidate['transcript'] ?? '') ?: null),
             ':sentiment_score' => (float) ($result['sentiment_analysis']['score'] ?? $candidate['sentiment_score'] ?? 0),
             ':dominant_emotion' => (string) (($result['visual_analysis']['dominant_emotion'] ?? $candidate['dominant_emotion'] ?? '') ?: null),
-            ':spoken_language' => (string) (($result['transcript_analysis']['language_code'] ?? $candidate['spoken_language'] ?? '') ?: null),
+            ':spoken_language' => (string) (($candidate['spoken_language'] ?? '') ?: null),
             ':english_level' => (string) (($result['english_level'] ?? $candidate['english_level'] ?? '') ?: null),
             ':english_score' => (int) ($result['english_score'] ?? $candidate['english_score'] ?? 0),
             ':biometric_json' => json_encode($biometric, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
@@ -918,12 +918,13 @@ if (! function_exists('gsdCandidateAiSpontaneitySummary')) {
 if (! function_exists('gsdCandidateAiTranscriptSummary')) {
     function gsdCandidateAiTranscriptSummary(string $transcript, array $analysisPayload, array $candidate): array
     {
-        $wordCount = str_word_count($transcript);
+        $wordCount = gsdCandidateAiWordCount($transcript);
         $languageCode = (string) ($analysisPayload['language'] ?? $candidate['spoken_language'] ?? 'en');
         $languageLabel = match (strtolower($languageCode)) {
             'es', 'es-es', 'es-co' => 'Spanish',
             'en', 'en-us', 'en-gb' => 'English',
             'pt', 'pt-br' => 'Portuguese',
+            'ja', 'ja-jp' => 'Japanese',
             default => strtoupper($languageCode),
         };
 
@@ -943,9 +944,25 @@ if (! function_exists('gsdCandidateAiTranscriptSummary')) {
     }
 }
 
+if (! function_exists('gsdCandidateAiWordCount')) {
+    function gsdCandidateAiWordCount(?string $text): int
+    {
+        $normalized = trim((string) $text);
+        if ($normalized === '') {
+            return 0;
+        }
+
+        preg_match_all('/[\p{L}\p{N}]+/u', $normalized, $matches);
+
+        return count($matches[0] ?? []);
+    }
+}
+
 if (! function_exists('gsdCandidateAiTranscribeMedia')) {
     function gsdCandidateAiTranscribeMedia(array $candidate): ?array
     {
+        $languageHints = gsdCandidateAiTranscriptionLanguageHints($candidate);
+        $transcriptionPrompt = gsdCandidateAiTranscriptionPrompt($candidate, $languageHints);
         $providers = [
             [
                 'name' => 'openai',
@@ -1002,21 +1019,35 @@ if (! function_exists('gsdCandidateAiTranscribeMedia')) {
 
                 foreach ((array) $provider['keys'] as $key) {
                     foreach ((array) $provider['models'] as $model) {
-                        try {
-                            $result = gsdCandidateAiTranscribeWithProvider(
-                                (string) $provider['url'],
-                                (string) $key,
-                                $filePath,
-                                (string) $model,
-                                (string) $provider['name'],
-                                (array) ($provider['headers'] ?? [])
-                            );
+                        foreach (array_merge($languageHints, [null]) as $languageHint) {
+                            try {
+                                $result = gsdCandidateAiTranscribeWithProvider(
+                                    (string) $provider['url'],
+                                    (string) $key,
+                                    $filePath,
+                                    (string) $model,
+                                    (string) $provider['name'],
+                                    (array) ($provider['headers'] ?? []),
+                                    [
+                                        'language' => $languageHint,
+                                        'prompt' => $transcriptionPrompt,
+                                    ]
+                                );
 
-                            if (is_array($result) && trim((string) ($result['text'] ?? '')) !== '') {
-                                return $result;
+                                if (
+                                    is_array($result)
+                                    && trim((string) ($result['text'] ?? '')) !== ''
+                                    && ! gsdCandidateAiTranscriptLooksIncorrect(
+                                        (string) ($result['text'] ?? ''),
+                                        $languageHints,
+                                        $candidate
+                                    )
+                                ) {
+                                    return $result;
+                                }
+                            } catch (Throwable $exception) {
+                                error_log('[candidate-ai] transcription failed: '.$exception->getMessage());
                             }
-                        } catch (Throwable $exception) {
-                            error_log('[candidate-ai] transcription failed: '.$exception->getMessage());
                         }
                     }
                 }
@@ -1028,13 +1059,21 @@ if (! function_exists('gsdCandidateAiTranscribeMedia')) {
 }
 
 if (! function_exists('gsdCandidateAiTranscribeWithProvider')) {
-    function gsdCandidateAiTranscribeWithProvider(string $url, string $key, string $filePath, string $model, string $provider, array $extraHeaders = []): ?array
+    function gsdCandidateAiTranscribeWithProvider(string $url, string $key, string $filePath, string $model, string $provider, array $extraHeaders = [], array $options = []): ?array
     {
         $payload = [
             'file' => new CURLFile($filePath),
             'model' => $model,
             'response_format' => 'json',
         ];
+
+        if (is_string($options['language'] ?? null) && trim((string) $options['language']) !== '') {
+            $payload['language'] = trim((string) $options['language']);
+        }
+
+        if (is_string($options['prompt'] ?? null) && trim((string) $options['prompt']) !== '') {
+            $payload['prompt'] = trim((string) $options['prompt']);
+        }
 
         $headers = array_merge([
             'Authorization: Bearer '.$key,
@@ -1078,12 +1117,116 @@ if (! function_exists('gsdCandidateAiTranscribeWithProvider')) {
     }
 }
 
+if (! function_exists('gsdCandidateAiTranscriptionLanguageHints')) {
+    /**
+     * @return list<string>
+     */
+    function gsdCandidateAiTranscriptionLanguageHints(array $candidate): array
+    {
+        $primaryCorpus = mb_strtolower(implode(' ', array_filter([
+            (string) ($candidate['languages'] ?? ''),
+            (string) ($candidate['country'] ?? ''),
+            (string) ($candidate['cv_text'] ?? ''),
+            (string) ($candidate['cv_text_preview'] ?? ''),
+        ])));
+
+        $spokenLanguage = trim(mb_strtolower((string) ($candidate['spoken_language'] ?? '')));
+
+        $hints = [];
+        $map = [
+            'english' => 'en',
+            'ingl' => 'en',
+            'spanish' => 'es',
+            'españ' => 'es',
+            'espan' => 'es',
+            'colombia' => 'es',
+            'mexico' => 'es',
+            'peru' => 'es',
+            'argentina' => 'es',
+            'chile' => 'es',
+            'japan' => 'ja',
+            'japanese' => 'ja',
+            'france' => 'fr',
+            'french' => 'fr',
+            'portuguese' => 'pt',
+            'brazil' => 'pt',
+        ];
+
+        foreach ($map as $needle => $code) {
+            if (str_contains($primaryCorpus, $needle)) {
+                $hints[] = $code;
+            }
+        }
+
+        if ($hints === [] && $spokenLanguage !== '') {
+            if (preg_match('/^[a-z]{2}(?:-[a-z]{2})?$/', $spokenLanguage) === 1) {
+                $hints[] = substr($spokenLanguage, 0, 2);
+            } else {
+                foreach ($map as $needle => $code) {
+                    if (str_contains($spokenLanguage, $needle)) {
+                        $hints[] = $code;
+                    }
+                }
+            }
+        }
+
+        if ($hints === []) {
+            $hints[] = 'en';
+        }
+
+        return array_values(array_unique($hints));
+    }
+}
+
+if (! function_exists('gsdCandidateAiTranscriptionPrompt')) {
+    function gsdCandidateAiTranscriptionPrompt(array $candidate, array $languageHints): string
+    {
+        $role = trim((string) ($candidate['position_interest'] ?? $candidate['professional_title'] ?? 'candidate interview'));
+        $languages = implode(', ', array_filter($languageHints));
+
+        return trim(sprintf(
+            'This is a job interview for GSD Associates. Expected language(s): %s. Role context: %s. Transcribe verbatim and avoid translating.',
+            $languages !== '' ? $languages : 'auto-detect',
+            $role !== '' ? $role : 'candidate interview'
+        ));
+    }
+}
+
+if (! function_exists('gsdCandidateAiTranscriptLooksIncorrect')) {
+    function gsdCandidateAiTranscriptLooksIncorrect(string $text, array $languageHints, array $candidate): bool
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return true;
+        }
+
+        $expectsCjk = array_intersect($languageHints, ['ja', 'zh', 'ko']) !== [];
+        $hasCjk = preg_match('/[\x{3040}-\x{30ff}\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{ac00}-\x{d7af}]/u', $text) === 1;
+
+        if (! $expectsCjk && $hasCjk) {
+            return true;
+        }
+
+        $wordCount = gsdCandidateAiWordCount(preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $text) ?? $text);
+        if ($wordCount >= 6) {
+            return false;
+        }
+
+        $cvText = mb_strtolower((string) ($candidate['cv_text'] ?? $candidate['cv_text_preview'] ?? ''));
+        if ($cvText === '') {
+            return false;
+        }
+
+        return mb_strlen($text) < 24 && mb_strlen($cvText) > 160;
+    }
+}
+
 if (! function_exists('gsdCandidateAiResolveMediaPaths')) {
     function gsdCandidateAiResolveMediaPaths(array $candidate): array
     {
         $relatives = array_values(array_filter(array_unique([
-            trim((string) ($candidate['video_original_path'] ?? '')),
             trim((string) ($candidate['video_processed_path'] ?? '')),
+            trim((string) ($candidate['video_original_path'] ?? '')),
         ])));
 
         $paths = [];
@@ -1095,12 +1238,12 @@ if (! function_exists('gsdCandidateAiResolveMediaPaths')) {
                 dirname(__DIR__, 2).'/hostinger-release/public_html/candidates/'.$normalized,
             ] as $path) {
                 if (is_file($path)) {
-                    $paths[$path] = filesize($path) ?: PHP_INT_MAX;
+                    $paths[$path] = filesize($path) ?: 0;
                 }
             }
         }
 
-        asort($paths);
+        arsort($paths);
 
         return array_keys($paths);
     }
