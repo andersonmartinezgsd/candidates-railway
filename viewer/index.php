@@ -10,17 +10,18 @@ if (!$clientToken) {
 }
 
 require_once __DIR__ . '/../config/Database.php';
+require_once __DIR__ . '/helpers.php';
 $database = new Database();
 $pdo = $database->getConnection();
 
 $MASTER_TOKEN = "GSD-HR-Sara-Collazos";
 // Mostramos candidatos en fases avanzadas
-$visibleStatuses = "'completed', 'client_review', 'interviewing', 'hired'";
+$visibleStatuses = gsdViewerStatusListSql();
 
 try {
     if ($clientToken === $MASTER_TOKEN) {
         $clientName = "GSD Global Review";
-        $sql = "SELECT * FROM gsd_candidates WHERE processing_status IN ($visibleStatuses) ORDER BY name ASC";
+        $sql = "SELECT * FROM gsd_candidates WHERE ".gsdViewerVisibleCandidateClause('gsd_candidates')." ORDER BY name ASC";
         $stmt = $pdo->prepare($sql);
         $stmt->execute();
         $candidates = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -34,7 +35,7 @@ try {
         }
 
         $clientName = $client['client_name'];
-        $sql = "SELECT * FROM gsd_candidates WHERE client_id = :client_id AND processing_status IN ($visibleStatuses) ORDER BY name ASC";
+        $sql = "SELECT * FROM gsd_candidates WHERE client_id = :client_id AND ".gsdViewerVisibleCandidateClause('gsd_candidates')." ORDER BY name ASC";
         $stmt = $pdo->prepare($sql);
         $stmt->execute(['client_id' => $client['id']]);
         $candidates = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -46,21 +47,6 @@ try {
 /**
  * Función para corregir rutas de archivos
  */
-function fixPath($rawPath) {
-    if (empty($rawPath)) return '';
-    if (strpos($rawPath, 'http') === 0) return $rawPath;
-    
-    // Si contiene la palabra uploads, extraemos desde ahí
-    if (strpos($rawPath, 'uploads') !== false) {
-        $parts = explode('uploads', $rawPath); 
-        $cleanPath = 'uploads' . end($parts);
-    } else {
-        $cleanPath = ltrim($rawPath, '/');
-    }
-    
-    // Ajuste para subir un nivel si el script está en una subcarpeta
-    return rtrim(gsdRecruitmentUploadsBaseUrl(), '/') . '/' . ltrim($cleanPath, '/\\');
-}
 ?>
 
 <!DOCTYPE html>
@@ -115,14 +101,8 @@ function fixPath($rawPath) {
                 <?php foreach ($candidates as $c): ?>
                     <?php 
                         // --- LÓGICA DE VALIDACIÓN DE VIDEO ---
-                        $rawVideoPath = '';
-                        if (!empty($c['video_processed_path'])) {
-                            $rawVideoPath = $c['video_processed_path'];
-                        } elseif (!empty($c['video_original_path'])) {
-                            $rawVideoPath = $c['video_original_path'];
-                        }
-                        
-                        $urlFinalVideo = fixPath($rawVideoPath);
+                        $rawVideoPath = !empty($c['video_processed_path']) ? $c['video_processed_path'] : $c['video_original_path'];
+                        $urlFinalVideo = gsdViewerCandidateStreamUrl($c);
 
                         $jsData = [
                             'id' => $c['id'],

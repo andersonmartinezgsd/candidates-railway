@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../config/Database.php';
+require_once __DIR__ . '/helpers.php';
 $clientToken = $_GET['token'] ?? null;
 $preEvaluator = $_GET['evaluator'] ?? '';
 
@@ -19,7 +20,7 @@ $sql = "SELECT c.*,
         (SELECT COUNT(*) FROM gsd_candidate_feedback f WHERE f.candidate_id = c.id) as total_reviews
         FROM gsd_candidates c 
         WHERE c.client_id = :client_id 
-        AND c.processing_status IN ('completed', 'client_review', 'interviewing', 'hired') 
+        AND ".gsdViewerVisibleCandidateClause('c')."
         HAVING total_reviews < 5 
         ORDER BY name ASC";
 
@@ -27,13 +28,6 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute(['client_id' => $client['id']]);
 $candidates = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-function fixPath($rawPath) {
-    if (empty($rawPath)) return '';
-    if (strpos($rawPath, 'http') === 0) return $rawPath;
-    $parts = explode('uploads', $rawPath);
-    $cleanPath = (strpos($rawPath, 'uploads') !== false) ? 'uploads' . end($parts) : ltrim($rawPath, '/');
-    return rtrim(gsdRecruitmentUploadsBaseUrl(), '/') . '/' . ltrim($cleanPath, '/\\');
-}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -63,13 +57,12 @@ function fixPath($rawPath) {
     <div class="container mx-auto px-6 py-12">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
             <?php foreach ($candidates as $c): 
-                $vPath = !empty($c['video_processed_path']) ? $c['video_processed_path'] : $c['video_original_path'];
                 $jsData = htmlspecialchars(json_encode([
                     'id'=>$c['id'], 'name'=>$c['name'], 'title'=>$c['professional_title'], 'reasoning'=>$c['match_reasoning']
                 ]), ENT_QUOTES, 'UTF-8');
             ?>
             <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden hover:shadow-xl transition-all cursor-pointer group"
-                 onclick='openModal(<?php echo $jsData; ?>, "<?php echo fixPath($vPath); ?>")'>
+                 onclick='openModal(<?php echo $jsData; ?>, "<?php echo htmlspecialchars(gsdViewerCandidateStreamUrl($c), ENT_QUOTES, "UTF-8"); ?>", "<?php echo htmlspecialchars(gsdViewerCandidateStreamUrl($c, "mp4"), ENT_QUOTES, "UTF-8"); ?>")'>
                 <div class="aspect-video bg-slate-900 relative flex items-center justify-center">
                     <div class="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-md border border-white/20 group-hover:scale-110 transition">
                         <i class="fa-solid fa-play text-white text-xs"></i>
@@ -145,11 +138,23 @@ function fixPath($rawPath) {
         const modal = document.getElementById('videoModal');
         const player = document.getElementById('modalPlayer');
 
-        function openModal(data, url) {
+        function openModal(data, url, mp4Url) {
             document.getElementById('mName').textContent = data.name;
             document.getElementById('mReasoning').textContent = data.reasoning;
             document.getElementById('fCandidateId').value = data.id;
-            player.src = url;
+            player.innerHTML = '';
+
+            const sourceMp4 = document.createElement('source');
+            sourceMp4.src = mp4Url || url;
+            sourceMp4.type = 'video/mp4';
+            player.appendChild(sourceMp4);
+
+            const sourceFallback = document.createElement('source');
+            sourceFallback.src = url;
+            sourceFallback.type = 'video/webm';
+            player.appendChild(sourceFallback);
+
+            player.load();
             modal.classList.remove('hidden');
             setTimeout(() => modal.classList.remove('opacity-0'), 10);
             player.play().catch(()=>{});

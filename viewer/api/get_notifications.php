@@ -1,6 +1,7 @@
 <?php
 header('Content-Type: application/json');
 require_once __DIR__ . '/../../config/Database.php';
+require_once __DIR__ . '/../helpers.php';
 
 try {
     $db = (new Database())->getConnection();
@@ -10,7 +11,7 @@ try {
     $countFeedback = $db->query($sqlFeedback)->fetch(PDO::FETCH_ASSOC)['total'];
 
     // 2. Contar videos/candidatos nuevos (últimas 48 horas)
-    $sqlNewOnes = "SELECT COUNT(*) as total FROM gsd_candidates WHERE created_at >= DATE_SUB(NOW(), INTERVAL 2 DAY)";
+    $sqlNewOnes = "SELECT COUNT(*) as total FROM gsd_candidates WHERE created_at >= DATE_SUB(NOW(), INTERVAL 2 DAY) AND ".gsdViewerVisibleCandidateClause('gsd_candidates');
     $countNew = $db->query($sqlNewOnes)->fetch(PDO::FETCH_ASSOC)['total'];
 
     echo json_encode([

@@ -1,40 +1,38 @@
 <?php
 require_once __DIR__ . '/../config/Database.php';
+require_once __DIR__ . '/helpers.php';
 
-// 1. Validar Token del Candidato
 $token = $_GET['token'] ?? null;
-$preEvaluator = $_GET['evaluator'] ?? ''; // Opcional si Sara lo manda en el link
-$clientRef = $_GET['client'] ?? 'direct-link'; // Para saber de qué cliente viene el feedback
+$preEvaluator = $_GET['evaluator'] ?? '';
+$clientRef = $_GET['client'] ?? 'direct-link';
 
 if (!$token) { die("Invalid Access."); }
 
 $database = new Database();
 $pdo = $database->getConnection();
 
-// 2. Obtener datos del Candidato
-$stmt = $pdo->prepare("SELECT id, name, professional_title, video_processed_path, video_original_path, match_reasoning FROM gsd_candidates WHERE token = ? LIMIT 1");
+$stmt = $pdo->prepare("SELECT id, token, name, professional_title, video_processed_path, video_original_path, match_reasoning FROM gsd_candidates WHERE token = ? AND (name IS NULL OR name <> 'Draft Candidate') LIMIT 1");
 $stmt->execute([$token]);
 $c = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$c) { die("Candidate Not Found."); }
 
-// 3. Lógica de Video (Procesado > Original)
-$vPath = !empty($c['video_processed_path']) ? $c['video_processed_path'] : $c['video_original_path'];
-$parts = explode('uploads', (string) $vPath);
-$clean = (strpos((string) $vPath, 'uploads') !== false) ? 'uploads' . end($parts) : ltrim((string) $vPath, '/');
-$videoUrl = rtrim(gsdRecruitmentUploadsBaseUrl(), '/') . '/' . ltrim($clean, '/\\');
+$streamUrl = gsdViewerCandidateStreamUrl($c);
+$mp4StreamUrl = gsdViewerCandidateStreamUrl($c, 'mp4');
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Interview Review | <?php echo htmlspecialchars($c['name']); ?></title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; overflow: hidden; }
+        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; margin: 0; }
+        @media (min-width: 768px) { body { overflow: hidden; height: 100vh; } }
         
         /* Estrellas */
         .star-rating { direction: rtl; display: flex; gap: 8px; justify-content: flex-end; }
@@ -44,17 +42,25 @@ $videoUrl = rtrim(gsdRecruitmentUploadsBaseUrl(), '/') . '/' . ltrim($clean, '/\
         
         .custom-scroll::-webkit-scrollbar { width: 4px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+        video { background-color: #000; width: 100%; height: 100%; }
     </style>
 </head>
-<body class="h-screen flex flex-col md:flex-row">
+<body class="flex flex-col md:flex-row min-h-screen">
 
-    <!-- LADO IZQUIERDO: REPRODUCTOR (70%) -->
-    <div class="flex-1 bg-black flex items-center justify-center relative">
-        <video controls autoplay class="w-full h-full object-contain shadow-2xl">
-            <source src="<?php echo $videoUrl; ?>" type="video/mp4">
-            Tu navegador no soporta el video.
+    <div class="w-full h-[45vh] md:h-full md:flex-1 bg-black flex items-center justify-center relative">
+        <video
+            id="candidateVideo"
+            controls
+            playsinline
+            webkit-playsinline
+            preload="metadata"
+            class="w-full h-full object-contain shadow-2xl"
+            style="background-color: black;"
+        >
+            <source src="<?php echo htmlspecialchars($mp4StreamUrl); ?>" type="video/mp4">
+            <source src="<?php echo htmlspecialchars($streamUrl); ?>" type="video/webm">
+            Your browser does not support video playback. Please try Chrome or update your device.
         </video>
-        <!-- Logo Flotante -->
         <div class="absolute top-8 left-8 opacity-40">
             <img src="../assets/images/iconGSD.png" class="h-6">
         </div>

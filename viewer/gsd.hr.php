@@ -1,25 +1,25 @@
 <?php
 require_once __DIR__ . '/../config/Database.php';
+require_once __DIR__ . '/helpers.php';
 $MASTER_TOKEN = "GSD-HR-Sara-Collazos";
 $token = $_GET['token'] ?? null;
 if ($token !== $MASTER_TOKEN) { header("Location: https://gsdoutsource.com/"); exit; }
 
 $database = new Database();
 $pdo = $database->getConnection();
-// Aquí ya NO incluimos 'rejected'. Los rechazados se verán en la papelera.
-$visibleStatuses = "'completed', 'client_review', 'interviewing', 'pending', 'reviewing'";
+$visibleStatuses = gsdViewerStatusListSql();
 
 // Consulta principal
 $sql = "SELECT c.*, 
         AVG(f.rating) as avg_rating, 
         COUNT(DISTINCT f.id) as total_feedback,
         GROUP_CONCAT(DISTINCT t.name SEPARATOR ',') as tags,
-        (SELECT COUNT(c2.id) FROM gsd_candidates c2 WHERE c2.email = c.email AND c2.processing_status IN ($visibleStatuses)) as version_count
+        (SELECT COUNT(c2.id) FROM gsd_candidates c2 WHERE c2.email = c.email AND ".gsdViewerVisibleCandidateClause('c2').") as version_count
         FROM gsd_candidates c 
         LEFT JOIN gsd_candidate_feedback f ON c.id = f.candidate_id
         LEFT JOIN gsd_candidate_tag_map ctm ON c.id = ctm.candidate_id
         LEFT JOIN gsd_tags t ON ctm.tag_id = t.id
-        WHERE c.processing_status IN ($visibleStatuses) 
+        WHERE ".gsdViewerVisibleCandidateClause('c')."
         GROUP BY c.id
         ORDER BY c.is_main DESC, c.name ASC";
 
@@ -27,14 +27,6 @@ $candidates = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 
 // Obtener todas las etiquetas disponibles para el filtro y el modal
 $allTags = $pdo->query("SELECT * FROM gsd_tags ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
-
-function fixPath($rawPath) {
-    if (empty($rawPath)) return '';
-    if (strpos($rawPath, 'http://') === 0 || strpos($rawPath, 'https://') === 0) return $rawPath;
-    $parts = explode('uploads', $rawPath);
-    $cleanPath = (strpos($rawPath, 'uploads') !== false) ? 'uploads' . end($parts) : ltrim($rawPath, '/');
-    return rtrim(gsdRecruitmentUploadsBaseUrl(), '/') . '/' . ltrim($cleanPath, '/\\');
-}
 
 function renderStars($rating) {
     $fullStars = round($rating);
@@ -112,8 +104,8 @@ function renderStars($rating) {
     <div class="container mx-auto px-6 py-8">
         <div id="candidatesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             <?php foreach ($candidates as $c): 
-                $vPath = !empty($c['video_processed_path']) ? $c['video_processed_path'] : $c['video_original_path'];
-                $urlFinal = fixPath($vPath);
+                $previewMp4Url = gsdViewerCandidateStreamUrl($c, 'mp4');
+                $previewFallbackUrl = gsdViewerCandidateStreamUrl($c);
                 $tagArray = $c['tags'] ? explode(',', $c['tags']) :[];
             ?>
             <div class="candidate-card relative bg-white rounded-[2.2rem] shadow-sm border border-slate-200 overflow-hidden p-3 hover:shadow-xl transition-all duration-300 flex flex-col <?php echo (isset($c['is_main']) && $c['is_main'] == 0) ? 'opacity-70 hover:opacity-100' : ''; ?>"
@@ -140,8 +132,9 @@ function renderStars($rating) {
                 <?php endif; ?>
 
                 <div class="aspect-video bg-slate-900 rounded-2xl relative overflow-hidden shadow-inner mb-4">
-                    <video class="w-full h-full object-cover" controls preload="none">
-                        <source src="<?php echo $urlFinal; ?>" type="video/mp4">
+                    <video class="w-full h-full object-cover" controls playsinline webkit-playsinline preload="metadata">
+                        <source src="<?php echo htmlspecialchars($previewMp4Url); ?>" type="video/mp4">
+                        <source src="<?php echo htmlspecialchars($previewFallbackUrl); ?>" type="video/webm">
                     </video>
                 </div>
 
@@ -317,16 +310,17 @@ function renderStars($rating) {
                 let html = '';
                 versions.forEach(v => {
                     const isMain = parseInt(v.is_main) === 1;
-                    const videoSrc = v.video_processed_path ? v.video_processed_path : v.video_original_path;
-                    const cleanPath = videoSrc && videoSrc.includes('uploads')
-                        ? `${<?php echo json_encode(rtrim(gsdRecruitmentUploadsBaseUrl(), '/')); ?>}/uploads${videoSrc.split('uploads')[1]}`
-                        : videoSrc;
+                    const mp4Url = v.mp4_stream_url || v.stream_url || '';
+                    const streamUrl = v.stream_url || mp4Url;
 
                     // Cambiado w-24 a w-48 o aspect-video w-full md:w-64 para que el video sea mucho más grande y claro
                     html += `
                         <div class="flex flex-col md:flex-row items-center justify-between p-4 border ${isMain ? 'border-green-400 bg-green-50' : 'border-slate-200 bg-slate-50'} rounded-2xl gap-6 shadow-sm">
                             <div class="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
-                                <video src="${cleanPath}" class="w-full md:w-56 aspect-video object-cover rounded-xl bg-black shadow-inner" controls preload="metadata"></video>
+                                <video class="w-full md:w-56 aspect-video object-cover rounded-xl bg-black shadow-inner" controls playsinline preload="metadata">
+                                    <source src="${mp4Url}" type="video/mp4">
+                                    <source src="${streamUrl}" type="video/webm">
+                                </video>
                                 <div class="text-center md:text-left">
                                     <p class="text-xs font-bold text-slate-800">Uploaded: ${v.created_at || 'Unknown Date'}</p>
                                     <p class="mt-1 text-[10px] font-bold text-slate-400">Token: ${v.token || 'N/A'}</p>
