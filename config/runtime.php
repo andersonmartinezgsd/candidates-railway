@@ -33,10 +33,14 @@ if (! function_exists('gsdRecruitmentLoadEnv')) {
         }
 
         $root = dirname(__DIR__);
+        $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+        $isStagingHost = str_contains($host, 'staging-candidates');
         $paths = array_values(array_filter(array_unique([
             getenv('GSD_RECRUITMENT_ENV') ?: null,
             $root.'/.env.local.dev',
             dirname($root).'/.env.local.dev',
+            $isStagingHost ? dirname($root, 2).'/private/staging-candidates/.env' : null,
+            $isStagingHost ? dirname($root, 2).'/private/staging-candidates.env' : null,
             dirname($root, 2).'/private/candidates/.env',
             dirname($root, 2).'/private/candidates.env',
             $root.'/.env',
