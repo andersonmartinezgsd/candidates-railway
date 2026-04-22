@@ -17,8 +17,38 @@ $c = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$c) { die("Candidate Not Found."); }
 
-$streamUrl = gsdViewerCandidateStreamUrl($c);
-$mp4StreamUrl = gsdViewerCandidateStreamUrl($c, 'mp4');
+function viewerCandidateStreamSources(array $candidate): array
+{
+    $defaultUrl = gsdViewerCandidateStreamUrl($candidate);
+    $mp4Url = gsdViewerCandidateStreamUrl($candidate, 'mp4');
+    $relativePath = trim((string) ($candidate['video_processed_path'] ?: $candidate['video_original_path'] ?: ''));
+    $extension = strtolower((string) pathinfo($relativePath, PATHINFO_EXTENSION));
+    $actualMime = match ($extension) {
+        'webm' => 'video/webm',
+        'ogg', 'ogv' => 'video/ogg',
+        default => 'video/mp4',
+    };
+
+    $sources = [];
+
+    if ($defaultUrl !== '') {
+        $sources[] = [
+            'src' => $defaultUrl,
+            'type' => $actualMime,
+        ];
+    }
+
+    if ($actualMime !== 'video/mp4' && $mp4Url !== '') {
+        $sources[] = [
+            'src' => $mp4Url,
+            'type' => 'video/mp4',
+        ];
+    }
+
+    return $sources;
+}
+
+$streamSources = viewerCandidateStreamSources($c);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -53,12 +83,15 @@ $mp4StreamUrl = gsdViewerCandidateStreamUrl($c, 'mp4');
             controls
             playsinline
             webkit-playsinline
-            preload="metadata"
+            x-webkit-airplay="allow"
+            disablepictureinpicture
+            preload="auto"
             class="w-full h-full object-contain shadow-2xl"
             style="background-color: black;"
         >
-            <source src="<?php echo htmlspecialchars($mp4StreamUrl); ?>" type="video/mp4">
-            <source src="<?php echo htmlspecialchars($streamUrl); ?>" type="video/webm">
+            <?php foreach ($streamSources as $streamSource): ?>
+                <source src="<?php echo htmlspecialchars($streamSource['src']); ?>" type="<?php echo htmlspecialchars($streamSource['type']); ?>">
+            <?php endforeach; ?>
             Your browser does not support video playback. Please try Chrome or update your device.
         </video>
         <div class="absolute top-8 left-8 opacity-40">
@@ -136,6 +169,35 @@ $mp4StreamUrl = gsdViewerCandidateStreamUrl($c, 'mp4');
     </div>
 
     <script>
+        (function initMobileViewerCandidateVideo() {
+            const video = document.getElementById('candidateVideo');
+
+            if (!video) {
+                return;
+            }
+
+            video.playsInline = true;
+            video.setAttribute('playsinline', '');
+            video.setAttribute('webkit-playsinline', '');
+
+            ['stalled', 'waiting', 'suspend'].forEach((eventName) => {
+                video.addEventListener(eventName, () => {
+                    if (video.seeking || video.ended || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+                        return;
+                    }
+
+                    const resumeAt = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+
+                    try {
+                        video.load();
+                        video.currentTime = resumeAt;
+                    } catch (error) {
+                        console.debug('Viewer mobile playback retry skipped:', error);
+                    }
+                });
+            });
+        })();
+
         document.getElementById('candidateFeedbackForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             

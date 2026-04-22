@@ -94,6 +94,107 @@ function videoMimeType(string $url): string
     };
 }
 
+function normalizeStreamVideoPath(?string $path): string
+{
+    $path = trim((string) $path);
+
+    if ($path === '') {
+        return '';
+    }
+
+    if (preg_match('#^https?://#i', $path)) {
+        $path = (string) (parse_url($path, PHP_URL_PATH) ?: '');
+    }
+
+    $path = str_replace('\\', '/', $path);
+
+    if (str_contains($path, '/uploads/')) {
+        return ltrim(substr($path, strpos($path, '/uploads/') + 1), '/');
+    }
+
+    if (str_starts_with($path, 'uploads/')) {
+        return $path;
+    }
+
+    return 'uploads/'.ltrim($path, '/');
+}
+
+function streamDiskCandidatesForRelative(string $relativePath, string $format = ''): array
+{
+    $relativePath = normalizeStreamVideoPath($relativePath);
+
+    if ($relativePath === '') {
+        return [];
+    }
+
+    $variants = [];
+    $extension = strtolower((string) pathinfo($relativePath, PATHINFO_EXTENSION));
+
+    if ($format === 'mp4') {
+        $variants[] = $extension === 'mp4'
+            ? $relativePath
+            : (preg_replace('/\.[^.]+$/', '.mp4', $relativePath) ?: $relativePath);
+    } else {
+        $variants[] = $relativePath;
+    }
+
+    $roots = [
+        dirname(__DIR__, 2),
+        dirname(__DIR__),
+    ];
+
+    $paths = [];
+
+    foreach (array_values(array_unique(array_filter($variants))) as $variant) {
+        $trimmed = preg_replace('#^uploads/#', '', $variant) ?? $variant;
+
+        foreach ($roots as $root) {
+            $paths[] = rtrim($root, '/').'/uploads/'.$trimmed;
+        }
+    }
+
+    return array_values(array_unique($paths));
+}
+
+function streamVariantExists(string $relativePath, string $format = ''): bool
+{
+    foreach (streamDiskCandidatesForRelative($relativePath, $format) as $candidatePath) {
+        if (is_file($candidatePath)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function candidateStreamSources(array $candidate, string $streamBaseUrl): array
+{
+    $relativePath = normalizeStreamVideoPath((string) ($candidate['video_processed_path'] ?: $candidate['video_original_path'] ?: ''));
+
+    if ($relativePath === '') {
+        return [];
+    }
+
+    $actualMime = videoMimeType($relativePath);
+    $sources = [];
+
+    if (streamVariantExists($relativePath)) {
+        $sources[] = [
+            'src' => $streamBaseUrl,
+            'type' => $actualMime,
+        ];
+    }
+
+    if ($actualMime !== 'video/mp4' && streamVariantExists($relativePath, 'mp4')) {
+        $sources[] = [
+            'src' => $streamBaseUrl.'&format=mp4',
+            'type' => 'video/mp4',
+        ];
+    }
+
+    return $sources;
+}
+
 function formatMoneyValue(mixed $value): string
 {
     if ($value === null || $value === '') {
@@ -171,8 +272,7 @@ $videoPath = (string) ($candidate['video_processed_path'] ?: $candidate['video_o
 $videoUrl = pathToPublicUrl($videoPath);
 $videoMime = $videoUrl !== '' ? videoMimeType($videoUrl) : 'video/mp4';
 $streamBaseUrl = 'stream.php?token='.rawurlencode((string) $candidate['token']);
-$mp4StreamUrl = $streamBaseUrl.'&format=mp4';
-$defaultStreamUrl = $streamBaseUrl;
+$streamSources = candidateStreamSources($candidate, $streamBaseUrl);
 $cvUrl = pathToPublicUrl($candidate['cv_filename'] ?? '');
 $analysisScore = (float) ($candidate['match_score'] ?: ($aiAnalysis['combined_score'] ?? $candidate['sentiment_score'] ?? 0));
 $aiHighlights = flattenAiInsights($aiAnalysis);
@@ -450,12 +550,15 @@ $technicalGroups = [
                             controls
                             playsinline
                             webkit-playsinline
-                            preload="metadata"
+                            x-webkit-airplay="allow"
+                            disablepictureinpicture
+                            preload="auto"
                             class="h-[42vh] w-full bg-black object-contain sm:h-[50vh] md:h-auto md:aspect-video"
                             style="background-color:black;"
                         >
-                            <source src="<?php echo htmlspecialchars($mp4StreamUrl); ?>" type="video/mp4">
-                            <source src="<?php echo htmlspecialchars($defaultStreamUrl); ?>" type="<?php echo htmlspecialchars($videoMime); ?>">
+                            <?php foreach ($streamSources as $streamSource): ?>
+                                <source src="<?php echo htmlspecialchars($streamSource['src']); ?>" type="<?php echo htmlspecialchars($streamSource['type']); ?>">
+                            <?php endforeach; ?>
                             Your browser does not support embedded video. Please try Chrome, Safari, or update your device.
                         </video>
                     </div>
@@ -848,6 +951,35 @@ $technicalGroups = [
     </div>
 
     <script>
+        (function initMobileCandidateVideoPlayback() {
+            const video = document.getElementById('candidateVideoNew');
+
+            if (!video) {
+                return;
+            }
+
+            video.playsInline = true;
+            video.setAttribute('playsinline', '');
+            video.setAttribute('webkit-playsinline', '');
+
+            ['stalled', 'waiting', 'suspend'].forEach((eventName) => {
+                video.addEventListener(eventName, () => {
+                    if (video.seeking || video.ended || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+                        return;
+                    }
+
+                    const resumeAt = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+
+                    try {
+                        video.load();
+                        video.currentTime = resumeAt;
+                    } catch (error) {
+                        console.debug('Candidate mobile playback retry skipped:', error);
+                    }
+                });
+            });
+        })();
+
         const refreshAiButton = document.getElementById('refreshAiBtn');
 
         async function refreshCandidateAi() {
