@@ -163,6 +163,11 @@ $_aiStatus = json_encode([
   .landing-panel-wrap{padding:22px;}
   .landing-stat-grid,.landing-steps{grid-template-columns:1fr;}
 }
+
+@keyframes fadeInGSD {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 </style>
 <link rel="stylesheet" href="assets/css/step7.css">
 </head>
@@ -173,159 +178,80 @@ $_aiStatus = json_encode([
   data-ai-status="<?php echo htmlspecialchars($_aiStatus, ENT_QUOTES); ?>">
 </div>
 
-<!-- ══════════════════ LANDING SCREEN (reemplaza modal) ══════════════════ -->
-<div id="landing-screen" style="position:fixed;inset:0;z-index:300;background:linear-gradient(135deg,#2d1b4e 0%,#1a0f2e 50%,#0f0a1e 100%);display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:1.25rem;">
-  <!-- Fondo decorativo -->
+<!-- ══════════════════ LANDING SCREEN (UX/UI GRADIENT VERSION) ══════════════════ -->
+<div id="landing-screen" style="position:fixed;inset:0;z-index:300;background:#0f0a1e;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:1.5rem;">
+  
+  <!-- Fondo decorativo sutil -->
   <div style="position:absolute;inset:0;overflow:hidden;pointer-events:none;">
-    <div style="position:absolute;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(140,82,255,.18) 0%,transparent 70%);top:-100px;right:-100px;"></div>
-    <div style="position:absolute;width:400px;height:400px;border-radius:50%;background:radial-gradient(circle,rgba(90,57,136,.25) 0%,transparent 70%);bottom:-80px;left:-80px;"></div>
+    <div style="position:absolute;width:800px;height:800px;border-radius:50%;background:radial-gradient(circle,rgba(140,82,255,0.06) 0%,transparent 70%);top:-200px;right:-100px;"></div>
+    <div style="position:absolute;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(90,57,136,0.08) 0%,transparent 70%);bottom:-150px;left:-100px;"></div>
   </div>
 
-  <div class="landing-shell">
-    <div class="landing-panel-wrap">
-      <div style="width:64px;height:64px;background:linear-gradient(135deg,#8C52FF,#5A3988);border-radius:18px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:1.4rem;color:#fff;box-shadow:0 8px 32px rgba(140,82,255,.4);">GSD</div>
-
-      <h1 style="color:#fff;font-size:2.4rem;font-weight:800;margin:1.25rem 0 .5rem;letter-spacing:-.03em;line-height:1.05;">Welcome to the GSD Associates candidate journey</h1>
-      <p style="color:rgba(255,255,255,.72);font-size:1rem;line-height:1.8;margin:0;max-width:620px;">
-        Before you begin, this preview shows exactly what you will find in the application, how your documents will be processed, and how to record the video correctly so your profile looks professional inside the system.
-      </p>
-
-      <div class="landing-stat-grid">
-        <div class="landing-stat">
-          <div class="landing-stat-k">What you will do</div>
-          <div class="landing-stat-v">Upload your documents, review the auto-filled data, record your interview, and submit your profile.</div>
-        </div>
-        <div class="landing-stat">
-          <div class="landing-stat-k">What the system does</div>
-          <div class="landing-stat-v">Extracts your CV information, prepares your form, and frames your video inside the GSD branded layout.</div>
-        </div>
-        <div class="landing-stat">
-          <div class="landing-stat-k">Most important</div>
-          <div class="landing-stat-v">Follow the video guide below so your recording stays centered, clear, and easy to review.</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="landing-panel-wrap">
-      <div class="landing-tab-row">
-        <button type="button" class="landing-tab active" data-landing-tab="overview" onclick="GSD.setLandingPanel('overview')">System Preview</button>
-        <button type="button" class="landing-tab" data-landing-tab="flow" onclick="GSD.setLandingPanel('flow')">Application Flow</button>
-        <button type="button" class="landing-tab" data-landing-tab="video" onclick="GSD.setLandingPanel('video')">Video Guide</button>
+  <div style="position:relative;width:100%;max-width:460px;animation: fadeIn GSD 0.8s ease-out;">
+    
+    <!-- CARD CON DEGRADADO: Blanco arriba, desvanecido abajo -->
+    <div style="
+      background: linear-gradient(to bottom, #ffffff 0%, #ffffff 45%, #f9faff 100%); 
+      border-radius: 40px; 
+      padding: 4rem 3rem; 
+      text-align: center; 
+      box-shadow: 0 40px 100px -20px rgba(0,0,0,0.4), 0 0 50px rgba(140,82,255,0.15); 
+      border: 1px solid rgba(255,255,255,0.8);
+      overflow: hidden;
+    ">
+      
+      <!-- Contenedor Logo (Fondo Blanco Garantizado) -->
+      <div style="margin-bottom:3rem; display:flex; justify-content:center; position:relative;">
+        <img src="assets/images/get-stuff-done-logo.png" alt="GSD" style="height:140px; width:auto; object-fit:contain; z-index:2;">
       </div>
 
-      <div class="landing-guide-panel active" data-landing-panel="overview">
-        <div class="landing-callout">
-          <div style="font-size:12px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;color:#fff;">What you will find in this application</div>
-          <p style="margin:10px 0 0;font-size:14px;line-height:1.8;color:#f5f3ff;">
-            The experience is organized in a simple sequence: document upload, automatic CV reading, field review, video interview, and final submission. Nothing should feel confusing or hidden.
-          </p>
-        </div>
-        <div class="landing-checklist">
-          <div class="landing-check">
-            <div class="landing-check-bullet">1</div>
-            <div class="landing-check-copy"><strong>Upload section:</strong> your resume is required, while ID and photo remain optional support files.</div>
-          </div>
-          <div class="landing-check">
-            <div class="landing-check-bullet">2</div>
-            <div class="landing-check-copy"><strong>Smart form coverage:</strong> the system reads your CV and preloads fields to save time, but you must still review them carefully.</div>
-          </div>
-          <div class="landing-check">
-            <div class="landing-check-bullet">3</div>
-            <div class="landing-check-copy"><strong>Video interview:</strong> your face, voice, and communication are part of the evaluation, so presentation and clarity matter.</div>
-          </div>
-        </div>
+      <!-- Texto de Bienvenida -->
+      <div style="margin-bottom:2.5rem; position:relative;">
+        <span style="display:block; color:#8C52FF; font-size:0.7rem; font-weight:900; text-transform:uppercase; letter-spacing:0.35em; margin-bottom:0.6rem;">Welcome to the next level</span>
+        <p style="color:#475569; font-size:0.95rem; font-weight:500; line-height:1.6; max-width:280px; margin:0 auto;">
+          Join our elite team of experts.<br>
+          <span style="color:#94a3b8; font-weight:400;">Your journey starts here.</span>
+        </p>
       </div>
 
-      <div class="landing-guide-panel" data-landing-panel="flow">
-        <div class="landing-steps">
-          <div class="landing-step">
-            <div class="landing-step-n">01</div>
-            <div class="landing-step-t">Upload your CV</div>
-            <div class="landing-step-d">Start with your resume so the platform can read it and unlock the rest of the application.</div>
-          </div>
-          <div class="landing-step">
-            <div class="landing-step-n">02</div>
-            <div class="landing-step-t">Review the prefilled form</div>
-            <div class="landing-step-d">Check every field highlighted by the system and complete anything that is missing or incorrect.</div>
-          </div>
-          <div class="landing-step">
-            <div class="landing-step-n">03</div>
-            <div class="landing-step-t">Complete the role questions</div>
-            <div class="landing-step-d">Answer the dynamic questions honestly so GSD can match you with the right opportunity.</div>
-          </div>
-          <div class="landing-step">
-            <div class="landing-step-n">04</div>
-            <div class="landing-step-t">Record your interview video</div>
-            <div class="landing-step-d">Use a quiet, well-lit place and speak clearly. The system will keep the final frame in horizontal 16:9.</div>
-          </div>
-          <div class="landing-step">
-            <div class="landing-step-n">05</div>
-            <div class="landing-step-t">Submit and confirm</div>
-            <div class="landing-step-d">Finish the application, confirm the final screen, and follow the WhatsApp handoff if requested.</div>
-          </div>
-          <div class="landing-step">
-            <div class="landing-step-n">✓</div>
-            <div class="landing-step-t">What HR will see</div>
-            <div class="landing-step-d">HR reviews your profile, video, transcript, and evaluator feedback in one organized candidate workspace.</div>
-          </div>
-        </div>
+      <!-- Botón Start -->
+      <button id="btn-new" onclick="GSD.doNewSession()"
+        style="width:100%; background:linear-gradient(135deg,#8C52FF 0%,#5A3988 100%); color:#fff; font-weight:800; padding:1.25rem; border-radius:22px; border:none; font-size:1rem; cursor:pointer; letter-spacing:0.02em; box-shadow:0 15px 35px -10px rgba(140,82,255,0.6); transition:all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); margin-bottom:2rem; display:flex; align-items:center; justify-content:center; gap:12px;"
+        onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 20px 40px -10px rgba(140,82,255,0.7)';"
+        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 15px 35px -10px rgba(140,82,255,0.6)';"
+        onclick="this.style.transform='scale(0.96)';">
+        <span style="font-size:1.2rem;">✨</span> Start New Application
+      </button>
+
+      <!-- Divisor sutil -->
+      <div style="display:flex; align-items:center; gap:1rem; margin-bottom:2rem; opacity:0.6;">
+        <div style="flex:1; height:1px; background:linear-gradient(to right, transparent, #e2e8f0, transparent);"></div>
+        <span style="color:#94a3b8; font-size:0.6rem; font-weight:800; text-transform:uppercase; letter-spacing:0.2em;">Continue Application</span>
+        <div style="flex:1; height:1px; background:linear-gradient(to right, transparent, #e2e8f0, transparent);"></div>
       </div>
 
-      <div class="landing-guide-panel" data-landing-panel="video">
-        <div class="landing-callout">
-          <div style="font-size:12px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;color:#fff;">Video recording instructions</div>
-          <p style="margin:10px 0 0;font-size:14px;line-height:1.8;color:#f5f3ff;">
-            This is the most sensitive part of the process. Please read these instructions before pressing record.
-          </p>
-        </div>
-        <div class="landing-checklist">
-          <div class="landing-check">
-            <div class="landing-check-bullet">🎥</div>
-            <div class="landing-check-copy"><strong>The final video is always horizontal 16:9.</strong> Even if you record from your phone, the system adapts your camera feed to the branded background so the GSD logo remains visible.</div>
-          </div>
-          <div class="landing-check">
-            <div class="landing-check-bullet">💡</div>
-            <div class="landing-check-copy"><strong>Choose a bright place.</strong> Keep your face clearly visible, avoid strong backlight, and stay centered in the frame.</div>
-          </div>
-          <div class="landing-check">
-            <div class="landing-check-bullet">🔇</div>
-            <div class="landing-check-copy"><strong>Reduce noise.</strong> Record in a quiet environment and speak naturally so the transcript and evaluation remain accurate.</div>
-          </div>
-          <div class="landing-check">
-            <div class="landing-check-bullet">📍</div>
-            <div class="landing-check-copy"><strong>Do not move too much.</strong> Keep your phone or laptop stable and avoid stepping out of frame during the recording.</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="landing-action-card">
-        <button id="btn-new" onclick="GSD.doNewSession()"
-          style="width:100%;background:linear-gradient(135deg,#8C52FF,#5A3988);color:#fff;font-weight:800;padding:1rem;border-radius:14px;border:none;font-size:.92rem;cursor:pointer;letter-spacing:.02em;box-shadow:0 4px 20px rgba(140,82,255,.4);transition:all .2s;margin-bottom:1.2rem;"
-          onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 28px rgba(140,82,255,.5)'"
-          onmouseout="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(140,82,255,.4)'">
-          <span id="btn-new-lbl">✨ Start New Application</span>
-        </button>
-
-        <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.1rem;">
-          <div style="flex:1;height:1px;background:rgba(255,255,255,.12);"></div>
-          <span style="color:rgba(255,255,255,.35);font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;">or resume</span>
-          <div style="flex:1;height:1px;background:rgba(255,255,255,.12);"></div>
-        </div>
-
+      <!-- Zona de Resume (dentro de la zona degradada) -->
+      <div style="background:rgba(255,255,255,0.5); padding:1.25rem; border-radius:24px; border:1px solid rgba(226,232,240,0.8); backdrop-filter:blur(5px);">
         <input type="text" id="ri-token"
-          style="width:100%;padding:.85rem 1rem;background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.15);border-radius:12px;color:#fff;font-family:monospace;font-size:.85rem;text-align:center;margin-bottom:.75rem;outline:none;box-sizing:border-box;"
+          style="width:100%; padding:1rem; background:#ffffff; border:1.5px solid #e2e8f0; border-radius:16px; color:#1e293b; font-family:'Courier New', monospace; font-size:0.9rem; text-align:center; margin-bottom:1rem; outline:none; transition:all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.02);"
           placeholder="GSD-XXXX-XXXXXX"
-          onfocus="this.style.borderColor='rgba(140,82,255,.8)'"
-          onblur="this.style.borderColor='rgba(255,255,255,.15)'">
+          onfocus="this.style.borderColor='#8C52FF'; this.style.boxShadow='0 0 0 4px rgba(140,82,255,0.1)';"
+          onblur="this.style.borderColor='#e2e8f0';">
 
         <button onclick="GSD.doResume()"
-          style="width:100%;background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.2);color:rgba(255,255,255,.8);font-weight:700;padding:.9rem;border-radius:12px;font-size:.85rem;cursor:pointer;transition:all .2s;"
-          onmouseover="this.style.background='rgba(255,255,255,.15)'"
-          onmouseout="this.style.background='rgba(255,255,255,.08)'">
-          🔄 Resume Application
+          style="width:100%; background:transparent; border:none; color:#5A3988; font-weight:800; padding:0.5rem; font-size:0.85rem; cursor:pointer; transition:all 0.3s; display:flex; align-items:center; justify-content:center; gap:8px;"
+          onmouseover="this.style.color='#8C52FF'; this.style.transform='scale(1.02)';"
+          onmouseout="this.style.color='#5A3988'; this.style.transform='scale(1)';">
+          <span>🔄</span> Resume Session
         </button>
       </div>
+      
     </div>
+    
+    <!-- Footer -->
+    <p style="text-align:center; color:rgba(255,255,255,0.25); font-size:0.7rem; margin-top:2.5rem; font-weight:600; letter-spacing:0.05em;">
+      &copy; 2026 GSD ASSOCIATES. SMART RECRUITMENT SYSTEM.
+    </p>
   </div>
 </div>
 
