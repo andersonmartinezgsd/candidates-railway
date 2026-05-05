@@ -130,3 +130,48 @@ if (! function_exists('gsdViewerCandidateStreamUrl')) {
         return gsdViewerPublicUploadUrl((string) $fallbackPath);
     }
 }
+
+if (! function_exists('gsdViewerVideoMimeFromPath')) {
+    function gsdViewerVideoMimeFromPath(?string $rawPath): string
+    {
+        $normalizedPath = gsdViewerNormalizeUploadPath($rawPath);
+        $extension = strtolower((string) pathinfo($normalizedPath, PATHINFO_EXTENSION));
+
+        return match ($extension) {
+            'webm' => 'video/webm',
+            'ogg', 'ogv' => 'video/ogg',
+            default => 'video/mp4',
+        };
+    }
+}
+
+if (! function_exists('gsdViewerCandidateStreamSources')) {
+    /**
+     * @return list<array{src:string,type:string}>
+     */
+    function gsdViewerCandidateStreamSources(array $candidate): array
+    {
+        $defaultUrl = gsdViewerCandidateStreamUrl($candidate);
+        $mp4Url = gsdViewerCandidateStreamUrl($candidate, 'mp4');
+        $relativePath = trim((string) ($candidate['video_processed_path'] ?? ($candidate['video_original_path'] ?? '')));
+        $actualMime = gsdViewerVideoMimeFromPath($relativePath);
+
+        $sources = [];
+
+        if ($defaultUrl !== '') {
+            $sources[] = [
+                'src' => $defaultUrl,
+                'type' => $actualMime,
+            ];
+        }
+
+        if ($actualMime !== 'video/mp4' && $mp4Url !== '') {
+            $sources[] = [
+                'src' => $mp4Url,
+                'type' => 'video/mp4',
+            ];
+        }
+
+        return $sources;
+    }
+}

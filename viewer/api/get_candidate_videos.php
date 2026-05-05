@@ -29,6 +29,7 @@ $stmt->execute([$email]);
 $videos = array_map(static function (array $video): array {
     $video['stream_url'] = gsdViewerCandidateStreamUrl($video);
     $video['mp4_stream_url'] = gsdViewerCandidateStreamUrl($video, 'mp4');
+    $video['stream_sources'] = gsdViewerCandidateStreamSources($video);
 
     return $video;
 }, $stmt->fetchAll(PDO::FETCH_ASSOC));

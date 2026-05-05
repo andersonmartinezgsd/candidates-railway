@@ -16,39 +16,7 @@ $stmt->execute([$token]);
 $c = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$c) { die("Candidate Not Found."); }
-
-function viewerCandidateStreamSources(array $candidate): array
-{
-    $defaultUrl = gsdViewerCandidateStreamUrl($candidate);
-    $mp4Url = gsdViewerCandidateStreamUrl($candidate, 'mp4');
-    $relativePath = trim((string) ($candidate['video_processed_path'] ?: $candidate['video_original_path'] ?: ''));
-    $extension = strtolower((string) pathinfo($relativePath, PATHINFO_EXTENSION));
-    $actualMime = match ($extension) {
-        'webm' => 'video/webm',
-        'ogg', 'ogv' => 'video/ogg',
-        default => 'video/mp4',
-    };
-
-    $sources = [];
-
-    if ($defaultUrl !== '') {
-        $sources[] = [
-            'src' => $defaultUrl,
-            'type' => $actualMime,
-        ];
-    }
-
-    if ($actualMime !== 'video/mp4' && $mp4Url !== '') {
-        $sources[] = [
-            'src' => $mp4Url,
-            'type' => 'video/mp4',
-        ];
-    }
-
-    return $sources;
-}
-
-$streamSources = viewerCandidateStreamSources($c);
+$streamSources = gsdViewerCandidateStreamSources($c);
 ?>
 <!DOCTYPE html>
 <html lang="en">

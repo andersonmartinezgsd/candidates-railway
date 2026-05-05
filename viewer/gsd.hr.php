@@ -104,8 +104,7 @@ function renderStars($rating) {
     <div class="container mx-auto px-6 py-8">
         <div id="candidatesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             <?php foreach ($candidates as $c): 
-                $previewMp4Url = gsdViewerCandidateStreamUrl($c, 'mp4');
-                $previewFallbackUrl = gsdViewerCandidateStreamUrl($c);
+                $previewSources = gsdViewerCandidateStreamSources($c);
                 $tagArray = $c['tags'] ? explode(',', $c['tags']) :[];
             ?>
             <div class="candidate-card relative bg-white rounded-[2.2rem] shadow-sm border border-slate-200 overflow-hidden p-3 hover:shadow-xl transition-all duration-300 flex flex-col <?php echo (isset($c['is_main']) && $c['is_main'] == 0) ? 'opacity-70 hover:opacity-100' : ''; ?>"
@@ -133,8 +132,9 @@ function renderStars($rating) {
 
                 <div class="aspect-video bg-slate-900 rounded-2xl relative overflow-hidden shadow-inner mb-4">
                     <video class="w-full h-full object-cover" controls playsinline webkit-playsinline preload="metadata">
-                        <source src="<?php echo htmlspecialchars($previewMp4Url); ?>" type="video/mp4">
-                        <source src="<?php echo htmlspecialchars($previewFallbackUrl); ?>" type="video/webm">
+                        <?php foreach ($previewSources as $source): ?>
+                            <source src="<?php echo htmlspecialchars($source['src']); ?>" type="<?php echo htmlspecialchars($source['type']); ?>">
+                        <?php endforeach; ?>
                     </video>
                 </div>
 
@@ -310,16 +310,26 @@ function renderStars($rating) {
                 let html = '';
                 versions.forEach(v => {
                     const isMain = parseInt(v.is_main) === 1;
-                    const mp4Url = v.mp4_stream_url || v.stream_url || '';
-                    const streamUrl = v.stream_url || mp4Url;
+                    const streamSources = Array.isArray(v.stream_sources) ? v.stream_sources : [];
+                    const fallbackSources = [];
+                    if (v.stream_url) {
+                        fallbackSources.push({ src: v.stream_url, type: 'video/mp4' });
+                    }
+                    if (v.mp4_stream_url && v.mp4_stream_url !== v.stream_url) {
+                        fallbackSources.push({ src: v.mp4_stream_url, type: 'video/mp4' });
+                    }
+                    const sources = (streamSources.length > 0 ? streamSources : fallbackSources)
+                        .filter((source) => source && source.src);
+                    const sourceMarkup = sources
+                        .map((source) => `<source src="${source.src}" type="${source.type || 'video/mp4'}">`)
+                        .join('');
 
                     // Cambiado w-24 a w-48 o aspect-video w-full md:w-64 para que el video sea mucho más grande y claro
                     html += `
                         <div class="flex flex-col md:flex-row items-center justify-between p-4 border ${isMain ? 'border-green-400 bg-green-50' : 'border-slate-200 bg-slate-50'} rounded-2xl gap-6 shadow-sm">
                             <div class="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
                                 <video class="w-full md:w-56 aspect-video object-cover rounded-xl bg-black shadow-inner" controls playsinline preload="metadata">
-                                    <source src="${mp4Url}" type="video/mp4">
-                                    <source src="${streamUrl}" type="video/webm">
+                                    ${sourceMarkup}
                                 </video>
                                 <div class="text-center md:text-left">
                                     <p class="text-xs font-bold text-slate-800">Uploaded: ${v.created_at || 'Unknown Date'}</p>
